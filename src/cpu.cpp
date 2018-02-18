@@ -5,7 +5,14 @@
 
 namespace CPU {
 u8 memory[65536];
-u8 A, B, C, D, E, F, H, L, Flag, opcode;
+u8 A, B, C, D, E, F, H, L, opcode;
+u8 *a = &A;
+u8 *b = &B;
+u8 *c = &C;
+u8 *d = &D;
+u8 *e = &E;
+u8 *h = &H;
+u8 *l = &L;
 std::string gb_type = "DMG";
 u16 PC, SP;
 std::array<u8, 8> rst_addrs = {0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38};
@@ -19,13 +26,13 @@ void seed() {
     PC = 0x100;
     A = 0x00;
     if (gb_type == "DMG") {
-        F = 0x01;
+        A = 0x01;
     } else if (gb_type == "CGB") {
-        F = 0x11;
+        A = 0x11;
     } else if (gb_type == "GBP") {
-        F = 0xFF;
+        A = 0xFF;
     }
-    Flag = 0xB0;
+    F = 0xB0;
     B = 0x00;
     C = 0x13;
     D = 0x00;
@@ -78,6 +85,35 @@ u16 to_u16(u8 lsb, u8 msb) {
 }
 u8 msb(u16 val) { return val >> 8; }
 u8 lsb(u16 val) { return val & 0xFF; }
+u8 *get_reg(u8 val) {
+    switch (val) {
+    case 0b111:
+        return a;
+    case 0b000:
+        return b;
+    case 0b001:
+        return c;
+    case 0b010:
+        return d;
+    case 0b011:
+        return e;
+    case 0b100:
+        return h;
+    case 0b101:
+        return l;
+    default:
+        std::cout << "Error! Incorrect register to fetch!: " << val
+                  << std::endl;
+    }
+}
+bool check_flag(enum flags f) {
+    switch (f) {
+    case zero:
+        break;
+    case carry:
+        break;
+    }
+}
 void jp_nn() {
     u8 lsb = read_memory(PC++);
     u8 msb = read_memory(PC++);
@@ -222,17 +258,117 @@ void rst_n() {
     PC = to_u16(rst_addr, 0x00);
     cycles += 4;
 }
-bool check_flag(enum flags f) {
-    switch (f) {
-    case zero:
-        break;
-    case carry:
-        break;
-    }
+void ld_r_r() {
+    u8 *r1 = get_reg((opcode >> 3) & 0x07);
+    u8 *r2 = get_reg(opcode & 0x07);
+    *r1 = *r2;
+    cycles++;
 }
+void ld_r_n() {
+    u8 *r = get_reg((opcode >> 3) & 0x07);
+    *r = read_memory(PC++);
+    cycles += 2;
+}
+void ld_r_hl() {
+    u8 *r = get_reg((opcode >> 3) & 0x07);
+    *r = read_memory(to_u16(L, H));
+    cycles += 2;
+}
+void ld_hl_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    write_memory(to_u16(L, H), *r);
+    cycles += 2;
+}
+void ld_hl_n() {
+    u8 n = read_memory(PC++);
+    write_memory(to_u16(L, H), n);
+    cycles += 3;
+}
+
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
     switch (opcode) {
+    // 8-bit Transfer IN/OUTs
+    // LD to A
+    case 0x7F:
+    case 0x78:
+    case 0x79:
+    case 0x7A:
+    case 0x7B:
+    case 0x7C:
+    case 0x7D:
+    // LD to B
+    case 0x40:
+    case 0x41:
+    case 0x42:
+    case 0x43:
+    case 0x44:
+    case 0x45:
+    // LD to C
+    case 0x48:
+    case 0x49:
+    case 0x4A:
+    case 0x4B:
+    case 0x4C:
+    case 0x4D:
+    // LD to D
+    case 0x50:
+    case 0x51:
+    case 0x52:
+    case 0x53:
+    case 0x54:
+    case 0x55:
+    // LD to E
+    case 0x58:
+    case 0x59:
+    case 0x5A:
+    case 0x5B:
+    case 0x5C:
+    case 0x5D:
+    // LD to H
+    case 0x60:
+    case 0x61:
+    case 0x62:
+    case 0x63:
+    case 0x64:
+    case 0x65:
+    // LD to L
+    case 0x68:
+    case 0x69:
+    case 0x6A:
+    case 0x6B:
+    case 0x6C:
+    case 0x6D:
+        ld_r_r();
+        break;
+    case 0x06:
+    case 0x0E:
+    case 0x16:
+    case 0x1E:
+    case 0x26:
+    case 0x2E:
+        ld_r_n();
+        break;
+    case 0x7E:
+    case 0x46:
+    case 0x4E:
+    case 0x56:
+    case 0x5E:
+    case 0x66:
+    case 0x6E:
+        ld_r_hl();
+        break;
+    case 0x70:
+    case 0x71:
+    case 0x72:
+    case 0x73:
+    case 0x74:
+    case 0x75:
+        ld_hl_r();
+        break;
+    case 0x36:
+        ld_hl_n();
+        break;
     // JUMPs
     case 0xC3:
         jp_nn();
@@ -290,6 +426,7 @@ void decode_opcode() {
         rst_n();
         break;
     default:
+        std::cout << "Unknown opcode: " << std::hex << opcode << std::endl;
         break;
     }
 }
