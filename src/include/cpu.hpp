@@ -4,11 +4,13 @@
 namespace CPU {
 extern u8 memory[];
 extern std::string gb_type;
-char read_memory(u8);
-void write_memory(u16);
+u8 read_memory(u16);
+enum flags { zero, carry };
+void write_memory(u16, u8);
 int run();
 void fetch_opcode();
 void decode_opcode();
 void reset();
 void seed();
+bool check_flag(enum flags);
 } // namespace CPU
