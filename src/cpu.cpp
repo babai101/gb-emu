@@ -77,8 +77,13 @@ void seed() {
     memory[0xFF4B] = 0x00; // WX
     memory[0xFFFF] = 0x00; // IE
 }
-u8 read_memory(u16 addr) { return 0; }
-void write_memory(u16 addr, u8 val) {}
+u8 read_memory(u16 addr) {
+    // TODO: Mirroring logic and events
+    return 0;
+}
+void write_memory(u16 addr, u8 val) {
+    // TODO: Mirroring logic and events
+}
 u16 to_u16(u8 lsb, u8 msb) {
     u16 temp = (msb << 8) | lsb;
     return temp;
@@ -284,7 +289,78 @@ void ld_hl_n() {
     write_memory(to_u16(L, H), n);
     cycles += 3;
 }
-
+void ld_a_bc() {
+    A = read_memory(to_u16(C, B));
+    cycles += 2;
+}
+void ld_a_de() {
+    A = read_memory(to_u16(E, D));
+    cycles += 2;
+}
+void ld_a_c() {
+    A = read_memory(0xFF00 + read_memory(C));
+    cycles += 2;
+}
+void ld_c_a() {
+    write_memory((0xFF00 + C), A);
+    cycles += 2;
+}
+void ld_a_n() {
+    A = read_memory(0xFF00 + read_memory(PC++));
+    cycles += 3;
+}
+void ld_n_a() {
+    write_memory(0xFF00 + read_memory(PC++), A);
+    cycles += 3;
+}
+void ld_a_nn() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    A = read_memory(to_u16(lsb, msb));
+    cycles += 4;
+}
+void ld_nn_a() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    write_memory(to_u16(lsb, msb), A);
+    cycles += 4;
+}
+void ld_a_hli() {
+    u16 addr = to_u16(L, H);
+    A = read_memory(addr++);
+    L = lsb(addr);
+    H = msb(addr);
+    cycles += 2;
+}
+void ld_a_hld() {
+    u16 addr = to_u16(L, H);
+    A = read_memory(addr--);
+    L = lsb(addr);
+    H = msb(addr);
+    cycles += 2;
+}
+void ld_bc_a() {
+    write_memory(to_u16(C, B), A);
+    cycles += 2;
+}
+void ld_de_a() {
+    write_memory(to_u16(E, D), A);
+    cycles += 2;
+}
+void ld_hli_a() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr++, A);
+    L = lsb(addr);
+    H = msb(addr);
+    cycles += 2;
+}
+void ld_hld_a() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr--, A);
+    L = lsb(addr);
+    H = msb(addr);
+    cycles += 2;
+}
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
     switch (opcode) {
@@ -368,6 +444,47 @@ void decode_opcode() {
         break;
     case 0x36:
         ld_hl_n();
+        break;
+    case 0x0A:
+        ld_a_bc();
+        break;
+    case 0x1A:
+        ld_a_de();
+        break;
+    case 0xF2:
+        ld_a_c();
+        break;
+    case 0xE2:
+        ld_c_a();
+        break;
+    case 0xF0:
+        ld_a_n();
+        break;
+    case 0xE0:
+        ld_n_a();
+        break;
+    case 0xFA:
+        ld_a_nn();
+        break;
+    case 0xEA:
+        ld_nn_a();
+    case 0x2A:
+        ld_a_hli();
+        break;
+    case 0x3A:
+        ld_a_hld();
+        break;
+    case 0x02:
+        ld_bc_a();
+        break;
+    case 0x12:
+        ld_de_a();
+        break;
+    case 0x22:
+        ld_hli_a();
+        break;
+    case 0x32:
+        ld_hld_a();
         break;
     // JUMPs
     case 0xC3:
