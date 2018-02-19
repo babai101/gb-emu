@@ -5,7 +5,7 @@ namespace CPU {
 extern u8 memory[];
 extern std::string gb_type;
 u8 read_memory(u16);
-enum flags { zero, carry };
+enum flags { zero, substract, half_carry, carry };
 void write_memory(u16, u8);
 int run();
 void fetch_opcode();

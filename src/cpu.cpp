@@ -109,13 +109,62 @@ u8 *get_reg(u8 val) {
     default:
         std::cout << "Error! Incorrect register to fetch!: " << val
                   << std::endl;
+        return a;
     }
 }
 bool check_flag(enum flags f) {
     switch (f) {
     case zero:
         break;
+    case substract:
+        break;
+    case half_carry:
+        break;
     case carry:
+        break;
+    }
+    return true; // stub
+}
+bool check_half_carry(u16 a, u16 b) {
+    u16 sum = (a & 0x0FFF) + (b & 0x0FFF);
+    if ((sum & 0X1000) == 0x1000)
+        return true;
+    else
+        return false;
+}
+void set_flag(enum flags f) {
+    switch (f) {
+    case zero:
+        F = F & 0b01111111;
+        F = F | 0b10000000;
+        break;
+    case substract:
+        F = F & 0b10111111;
+        F = F | 0b01000000;
+        break;
+    case half_carry:
+        F = F & 0b11011111;
+        F = F | 0b00100000;
+        break;
+    case carry:
+        F = F & 0b11101111;
+        F = F | 0b00010000;
+        break;
+    }
+}
+void reset_flag(enum flags f) {
+    switch (f) {
+    case zero:
+        F = F & 0b01111111;
+        break;
+    case substract:
+        F = F & 0b10111111;
+        break;
+    case half_carry:
+        F = F & 0b11011111;
+        break;
+    case carry:
+        F = F & 0b11101111;
         break;
     }
 }
@@ -361,6 +410,92 @@ void ld_hld_a() {
     H = msb(addr);
     cycles += 2;
 }
+void ld_dd_nn() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    switch (opcode) {
+    case 0x01:
+        B = msb, C = lsb;
+        break;
+    case 0x11:
+        D = msb, E = lsb;
+        break;
+    case 0x21:
+        H = msb, L = lsb;
+        break;
+    case 0x31:
+        SP = to_u16(lsb, msb);
+        break;
+    }
+    cycles += 3;
+}
+void ld_sp_hl() {
+    SP = to_u16(L, H);
+    cycles += 2;
+}
+void push_qq() {
+    u8 lsb, msb;
+    switch (opcode) {
+    case 0xF5:
+        lsb = F, msb = A;
+        break;
+    case 0xC5:
+        lsb = C, msb = B;
+        break;
+    case 0xD5:
+        lsb = E, msb = D;
+        break;
+    case 0xE5:
+        lsb = L, msb = H;
+        break;
+    }
+    write_memory(--SP, msb);
+    write_memory(--SP, lsb);
+    cycles += 4;
+}
+void pop_qq() {
+    u8 lsb = read_memory(SP++);
+    u8 msb = read_memory(SP++);
+    switch (opcode) {
+    case 0xF1:
+        A = msb, F = lsb;
+        break;
+    case 0xC1:
+        B = msb, C = lsb;
+        break;
+    case 0xD1:
+        D = msb, E = lsb;
+        break;
+    case 0xE1:
+        H = msb, L = lsb;
+        break;
+    }
+    cycles += 3;
+}
+void ldhl_sp_e() {
+    s8 e = read_memory(PC++);
+    H = msb(SP + e);
+    L = lsb(SP + e);
+    reset_flag(zero);
+    reset_flag(substract);
+    if ((SP + e) > 0xFFFF)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+    if (check_half_carry(SP, e))
+        set_flag(half_carry);
+    else
+        reset_flag(half_carry);
+    cycles += 3;
+}
+void ld_nn_sp() {
+    u8 lsb_addr = read_memory(PC++);
+    u8 msb_addr = read_memory(PC++);
+    u16 addr = to_u16(lsb_addr, msb_addr);
+    write_memory(addr, lsb(SP));
+    write_memory(addr + 1, msb(SP));
+    cycles += 5;
+}
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
     switch (opcode) {
@@ -485,6 +620,34 @@ void decode_opcode() {
         break;
     case 0x32:
         ld_hld_a();
+        break;
+    // 16-bit Transfer Instruction
+    case 0x01:
+    case 0x11:
+    case 0x21:
+    case 0x31:
+        ld_dd_nn();
+        break;
+    case 0xF9:
+        ld_sp_hl();
+        break;
+    case 0xF5:
+    case 0xC5:
+    case 0xD5:
+    case 0xE5:
+        push_qq();
+        break;
+    case 0xF1:
+    case 0xC1:
+    case 0xD1:
+    case 0xE1:
+        pop_qq();
+        break;
+    case 0xF8:
+        ldhl_sp_e();
+        break;
+    case 0x08:
+        ld_nn_sp();
         break;
     // JUMPs
     case 0xC3:
