@@ -125,13 +125,6 @@ bool check_flag(enum flags f) {
     }
     return true; // stub
 }
-bool check_half_carry(u16 a, u16 b) {
-    u16 sum = (a & 0x0FFF) + (b & 0x0FFF);
-    if ((sum & 0X1000) == 0x1000)
-        return true;
-    else
-        return false;
-}
 void set_flag(enum flags f) {
     switch (f) {
     case zero:
@@ -167,6 +160,32 @@ void reset_flag(enum flags f) {
         F = F & 0b11101111;
         break;
     }
+}
+void set_reset_half_carry8(u8 a, u8 b) {
+    u8 sum = (a & 0x0F) + (b & 0x0F);
+    if ((sum & 0x10) == 0x10)
+        set_flag(half_carry);
+    else
+        reset_flag(half_carry);
+}
+void set_reset_half_carry16(u16 a, u16 b) {
+    u16 sum = (a & 0x0FFF) + (b & 0x0FFF);
+    if ((sum & 0X1000) == 0x1000)
+        set_flag(half_carry);
+    else
+        reset_flag(half_carry);
+}
+void set_reset_zero(u8 a) {
+    if (a == 0)
+        set_flag(zero);
+    else
+        reset_flag(zero);
+}
+void set_reset_carry8(u8 a, u8 b) {
+    if ((a + b) > 0xFF)
+        set_flag(carry);
+    else
+        reset_flag(carry);
 }
 void jp_nn() {
     u8 lsb = read_memory(PC++);
@@ -482,10 +501,7 @@ void ldhl_sp_e() {
         set_flag(carry);
     else
         reset_flag(carry);
-    if (check_half_carry(SP, e))
-        set_flag(half_carry);
-    else
-        reset_flag(half_carry);
+    set_reset_half_carry16(SP, e);
     cycles += 3;
 }
 void ld_nn_sp() {
@@ -495,6 +511,23 @@ void ld_nn_sp() {
     write_memory(addr, lsb(SP));
     write_memory(addr + 1, msb(SP));
     cycles += 5;
+}
+void add_a_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    set_reset_half_carry8(A, *r);
+    reset_flag(substract);
+    set_reset_carry8(A, *r);
+    A += *r;
+    set_reset_zero(A);
+    cycles++;
+}
+void add_a_n() {
+    u8 n = read_memory(PC++);
+    reset_flag(substract);
+    set_reset_half_carry8(A, n);
+    set_reset_carry8(A, n);
+    A += n;
+    set_reset_zero(A);
 }
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
@@ -648,6 +681,19 @@ void decode_opcode() {
         break;
     case 0x08:
         ld_nn_sp();
+        break;
+    // 8-bit ALU
+    case 0x87:
+    case 0x80:
+    case 0x81:
+    case 0x82:
+    case 0x83:
+    case 0x84:
+    case 0x85:
+        add_a_r();
+        break;
+    case 0xC6:
+        add_a_n();
         break;
     // JUMPs
     case 0xC3:
