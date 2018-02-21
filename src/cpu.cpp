@@ -15,7 +15,8 @@ u8 *h = &H;
 u8 *l = &L;
 std::string gb_type = "DMG";
 u16 PC, SP;
-std::array<u8, 8> rst_addrs = {0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38};
+std::array<u8, 8> rst_addrs = {
+    {0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38}};
 int cycles = 0;
 void reset() {
     for (std::size_t i = 0; i < 65536; i++)
@@ -286,6 +287,64 @@ u8 dec8(u8 val) {
     set_reset_half_borrow8(val, 1);
     set_reset_zero(--val);
     return val;
+}
+u8 rotate_left_carry(u8 reg) {
+    u8 output;
+    if ((reg & 0x80) == 0x80) {
+        output = ((reg << 1) & 0xFF) | 0x01;
+        set_flag(carry);
+    } else {
+        output = (reg << 1) & 0xFF;
+        reset_flag(carry);
+    }
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    reset_flag(zero);
+    return output;
+}
+u8 rotate_right_carry(u8 reg) {
+    u8 output;
+    if ((reg & 0x01) == 0x01) {
+        output = (reg >> 1) | 0x80;
+        set_flag(carry);
+    } else {
+        output = reg >> 1;
+        reset_flag(carry);
+    }
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    reset_flag(zero);
+    return output;
+}
+u8 rotate_left(u8 reg) {
+    u8 output;
+    bool old_carry = check_flag(carry);
+    if ((reg & 0x80) == 0x80)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+    output = (reg << 1) & 0xFF;
+    if (old_carry)
+        output = output | 0x01;
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    reset_flag(zero);
+    return output;
+}
+u8 rotate_right(u8 reg) {
+    u8 output;
+    bool old_carry = check_flag(carry);
+    if ((reg & 0x01) == 0x01)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+    output = reg >> 1;
+    if (old_carry)
+        output = output | 0x80;
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    reset_flag(zero);
+    return output;
 }
 void jp_nn() {
     u8 lsb = read_memory(PC++);
@@ -769,9 +828,9 @@ void add_hl_ss() {
     cycles += 2;
 }
 void add_sp_e() {
-   SP = add16(SP, to_u16(read_memory(PC++), 0x00));
-   reset_flag(zero);
-   cycles += 4;
+    SP = add16(SP, to_u16(read_memory(PC++), 0x00));
+    reset_flag(zero);
+    cycles += 4;
 }
 void inc_ss() {
     u8 msb_reg, lsb_reg;
@@ -840,6 +899,62 @@ void dec_ss() {
         break;
     }
     cycles += 2;
+}
+void rlca() {
+    A = rotate_left_carry(A);
+    cycles++;
+}
+void rla() {
+    A = rotate_left(A);
+    cycles++;
+}
+void rrca() {
+    A = rotate_right_carry(A);
+    cycles++;
+}
+void rra() {
+    A = rotate_right(A);
+    cycles++;
+}
+void rlc_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = rotate_left_carry(*r);
+    cycles += 2;
+}
+void rlc_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, rotate_left_carry(read_memory(addr)));
+    cycles += 4;
+}
+void rl_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = rotate_left(*r);
+    cycles += 2;
+}
+void rl_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, rotate_left(read_memory(addr)));
+    cycles += 4;
+}
+void rrc_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = rotate_right_carry(*r);
+    cycles += 2;
+}
+void rrc_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, rotate_right_carry(read_memory(addr)));
+    cycles += 4;
+}
+void rr_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = rotate_right(*r);
+    cycles += 2;
+}
+void rr_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, rotate_right(read_memory(addr)));
+    cycles += 4;
 }
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
@@ -1160,6 +1275,72 @@ void decode_opcode() {
     case 0x2B:
     case 0x3B:
         dec_ss();
+        break;
+    // Rotate shift Instructions
+    case 0x07:
+        rlca();
+        break;
+    case 0x17:
+        rla();
+        break;
+    case 0x0F:
+        rrca();
+        break;
+    case 0x1F:
+        rra();
+        break;
+    case 0xCB:
+        opcode = read_memory(PC++);
+        switch (opcode) {
+        case 0x07:
+        case 0x00:
+        case 0x01:
+        case 0x02:
+        case 0x03:
+        case 0x04:
+        case 0x05:
+            rlc_r();
+            break;
+        case 0x06:
+            rlc_hl();
+            break;
+        case 0x17:
+        case 0x10:
+        case 0x11:
+        case 0x12:
+        case 0x13:
+        case 0x14:
+        case 0x15:
+            rl_r();
+            break;
+        case 0x16:
+            rl_hl();
+            break;
+        case 0x0F:
+        case 0x08:
+        case 0x09:
+        case 0x0A:
+        case 0x0B:
+        case 0x0C:
+        case 0x0D:
+            rrc_r();
+            break;
+        case 0x0E:
+            rrc_hl();
+            break;
+        case 0x1F:
+        case 0x18:
+        case 0x19:
+        case 0x1A:
+        case 0x1B:
+        case 0x1C:
+        case 0x1D:
+            rr_r();
+            break;
+        case 0x1E:
+            rr_hl();
+            break;
+        }
         break;
     // JUMPs
     case 0xC3:
