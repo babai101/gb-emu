@@ -195,6 +195,12 @@ void set_reset_carry8(u8 a, u8 b) {
     else
         reset_flag(carry);
 }
+void set_reset_carry16(u16 a, u16 b) {
+    if ((a + b) > 0xFFFF)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+}
 void set_reset_borrow8(u8 a, u8 b) {
     if (b > a)
         set_flag(carry);
@@ -206,6 +212,13 @@ void add(u8 *dest, u8 src) {
     set_reset_carry8(*dest, src);
     *a += src;
     set_reset_zero(A);
+}
+u16 add16(u16 dest, u16 src) {
+    set_reset_half_carry16(dest, src);
+    set_reset_carry16(dest, src);
+    reset_flag(subtract);
+    dest += src;
+    return dest;
 }
 void addc(u8 *dest, u8 src) {
     u8 temp = 0;
@@ -734,6 +747,100 @@ void dec_hl() {
     write_memory(to_u16(L, H), dec8(read_memory(to_u16(L, H))));
     cycles += 3;
 }
+void add_hl_ss() {
+    u8 msb_reg, lsb_reg;
+    switch (opcode) {
+    case 0x09:
+        msb_reg = B, lsb_reg = C;
+        break;
+    case 0x19:
+        msb_reg = D, lsb_reg = E;
+        break;
+    case 0x29:
+        msb_reg = H, lsb_reg = L;
+        break;
+    case 0x39:
+        msb_reg = msb(SP), lsb_reg = lsb(SP);
+        break;
+    }
+    u16 temp = add16(to_u16(L, H), to_u16(lsb_reg, msb_reg));
+    H = msb(temp);
+    L = lsb(temp);
+    cycles += 2;
+}
+void add_sp_e() {
+   SP = add16(SP, to_u16(read_memory(PC++), 0x00));
+   reset_flag(zero);
+   cycles += 4;
+}
+void inc_ss() {
+    u8 msb_reg, lsb_reg;
+    switch (opcode) {
+    case 0x03:
+        msb_reg = B, lsb_reg = C;
+        break;
+    case 0x13:
+        msb_reg = D, lsb_reg = E;
+        break;
+    case 0x23:
+        msb_reg = H, lsb_reg = L;
+        break;
+    case 0x33:
+        msb_reg = msb(SP), lsb_reg = lsb(SP);
+        break;
+    }
+    u16 temp = to_u16(lsb_reg, msb_reg) + 1;
+    msb_reg = msb(temp), lsb_reg = lsb(temp);
+    switch (opcode) {
+    case 0x03:
+        B = msb_reg, C = lsb_reg;
+        break;
+    case 0x13:
+        D = msb_reg, E = lsb_reg;
+        break;
+    case 0x23:
+        H = msb_reg, L = lsb_reg;
+        break;
+    case 0x33:
+        SP = temp;
+        break;
+    }
+    cycles += 2;
+}
+void dec_ss() {
+    u8 msb_reg, lsb_reg;
+    switch (opcode) {
+    case 0x0B:
+        msb_reg = B, lsb_reg = C;
+        break;
+    case 0x1B:
+        msb_reg = D, lsb_reg = E;
+        break;
+    case 0x2B:
+        msb_reg = H, lsb_reg = L;
+        break;
+    case 0x3B:
+        msb_reg = msb(SP), lsb_reg = lsb(SP);
+        break;
+    }
+    u16 temp = to_u16(lsb_reg, msb_reg) - 1;
+    msb_reg = msb(temp), lsb_reg = lsb(temp);
+    switch (opcode) {
+    case 0x0B:
+        B = msb_reg, C = lsb_reg;
+        break;
+    case 0x1B:
+        D = msb_reg, E = lsb_reg;
+        break;
+    case 0x2B:
+        H = msb_reg, L = lsb_reg;
+        break;
+    case 0x3B:
+        SP = temp;
+        break;
+    }
+    cycles += 2;
+}
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
     switch (opcode) {
@@ -1031,6 +1138,28 @@ void decode_opcode() {
         break;
     case 0x35:
         dec_hl();
+        break;
+    // 16-bit ALU
+    case 0x09:
+    case 0x19:
+    case 0x29:
+    case 0x39:
+        add_hl_ss();
+        break;
+    case 0xE8:
+        add_sp_e();
+        break;
+    case 0x03:
+    case 0x13:
+    case 0x23:
+    case 0x33:
+        inc_ss();
+        break;
+    case 0x0B:
+    case 0x1B:
+    case 0x2B:
+    case 0x3B:
+        dec_ss();
         break;
     // JUMPs
     case 0xC3:
