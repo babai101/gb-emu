@@ -116,7 +116,7 @@ bool check_flag(enum flags f) {
     switch (f) {
     case zero:
         break;
-    case substract:
+    case subtract:
         break;
     case half_carry:
         break;
@@ -131,7 +131,7 @@ void set_flag(enum flags f) {
         F = F & 0b01111111;
         F = F | 0b10000000;
         break;
-    case substract:
+    case subtract:
         F = F & 0b10111111;
         F = F | 0b01000000;
         break;
@@ -150,7 +150,7 @@ void reset_flag(enum flags f) {
     case zero:
         F = F & 0b01111111;
         break;
-    case substract:
+    case subtract:
         F = F & 0b10111111;
         break;
     case half_carry:
@@ -175,6 +175,14 @@ void set_reset_half_carry16(u16 a, u16 b) {
     else
         reset_flag(half_carry);
 }
+void set_reset_half_borrow8(u8 a, u8 b) {
+    a = (a & 0x0F) | 0x10;
+    u8 diff = a - (b & 0x0F);
+    if ((diff & 0x10) != 0x10)
+        set_flag(half_carry);
+    else
+        reset_flag(half_carry);
+}
 void set_reset_zero(u8 a) {
     if (a == 0)
         set_flag(zero);
@@ -186,6 +194,70 @@ void set_reset_carry8(u8 a, u8 b) {
         set_flag(carry);
     else
         reset_flag(carry);
+}
+void set_reset_borrow8(u8 a, u8 b) {
+    if (b > a)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+}
+void add(u8 *dest, u8 src) {
+    set_reset_half_carry8(*dest, src);
+    set_reset_carry8(*dest, src);
+    *a += src;
+    set_reset_zero(A);
+}
+void addc(u8 *dest, u8 src) {
+    u8 temp = 0;
+    if (check_flag(carry))
+        temp = 1;
+    else
+        temp = 0;
+    set_reset_half_carry8(*dest, src + temp);
+    set_reset_carry8(*dest, src + temp);
+    *a += (src + temp);
+    set_reset_zero(A);
+}
+void sub(u8 *dest, u8 src) {
+    set_reset_half_borrow8(*dest, src);
+    set_reset_borrow8(*dest, src);
+    *a -= src;
+    set_reset_zero(A);
+}
+void subc(u8 *dest, u8 src) {
+    u8 temp = 0;
+    if (check_flag(carry))
+        temp = 1;
+    else
+        temp = 0;
+    set_reset_half_borrow8(*dest, src - temp);
+    set_reset_borrow8(*dest, src - temp);
+    *a -= (src - temp);
+    set_reset_zero(A);
+}
+void and8(u8 operand) {
+    reset_flag(subtract);
+    reset_flag(carry);
+    set_flag(half_carry);
+    A &= operand;
+    set_reset_zero(A);
+}
+void or8(u8 operand) {
+    reset_flag(subtract);
+    reset_flag(half_carry);
+    reset_flag(carry);
+    A |= operand;
+    set_reset_zero(A);
+}
+void xor8(u8 operand) {
+    reset_flag(subtract);
+    reset_flag(half_carry);
+    reset_flag(carry);
+    A |= operand;
+    set_reset_zero(A);
+}
+void cp8(u8 operand) {
+    
 }
 void jp_nn() {
     u8 lsb = read_memory(PC++);
@@ -496,7 +568,7 @@ void ldhl_sp_e() {
     H = msb(SP + e);
     L = lsb(SP + e);
     reset_flag(zero);
-    reset_flag(substract);
+    reset_flag(subtract);
     if ((SP + e) > 0xFFFF)
         set_flag(carry);
     else
@@ -514,20 +586,132 @@ void ld_nn_sp() {
 }
 void add_a_r() {
     u8 *r = get_reg(opcode & 0x07);
-    set_reset_half_carry8(A, *r);
-    reset_flag(substract);
-    set_reset_carry8(A, *r);
-    A += *r;
-    set_reset_zero(A);
+    add(a, *r);
+    reset_flag(subtract);
     cycles++;
 }
 void add_a_n() {
     u8 n = read_memory(PC++);
-    reset_flag(substract);
-    set_reset_half_carry8(A, n);
-    set_reset_carry8(A, n);
-    A += n;
-    set_reset_zero(A);
+    add(a, n);
+    reset_flag(subtract);
+    cycles += 2;
+}
+void add_a_hl() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    add(a, read_memory(to_u16(lsb, msb)));
+    reset_flag(subtract);
+    cycles += 2;
+}
+void adc_a_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    addc(a, *r);
+    reset_flag(subtract);
+    cycles++;
+}
+void adc_a_n() {
+    addc(a, read_memory(PC++));
+    reset_flag(subtract);
+    cycles += 2;
+}
+void adc_a_hl() {
+    addc(a, read_memory(to_u16(L, H)));
+    reset_flag(subtract);
+    cycles += 2;
+}
+void sub_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    sub(a, *r);
+    set_flag(subtract);
+    cycles++;
+}
+void sub_n() {
+    sub(a, read_memory(PC++));
+    set_flag(subtract);
+    cycles += 2;
+}
+void sub_hl() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    sub(a, read_memory(to_u16(lsb, msb)));
+    set_flag(subtract);
+    cycles += 2;
+}
+void sbc_a_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    subc(a, *r);
+    set_flag(subtract);
+    cycles++;
+}
+void sbc_a_n() {
+    subc(a, read_memory(PC++));
+    set_flag(subtract);
+    cycles += 2;
+}
+void sbc_a_hl() {
+    subc(a, read_memory(to_u16(L, H)));
+    set_flag(subtract);
+    cycles += 2;
+}
+void and_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    and8(*r);
+    cycles++;
+}
+void and_n() {
+    and8(read_memory(PC++));
+    cycles += 2;
+}
+void and_hl() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    and8(read_memory(to_u16(lsb, msb)));
+    cycles += 2;
+}
+void or_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    or8(*r);
+    cycles++;
+}
+void or_n() {
+    or8(read_memory(PC++));
+    cycles += 2;
+}
+void or_hl() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    or8(read_memory(to_u16(lsb, msb)));
+    cycles += 2;
+}
+void xor_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    xor8(*r);
+    cycles++;
+}
+void xor_n() {
+    xor8(read_memory(PC++));
+    cycles += 2;
+}
+void xor_hl() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    xor8(read_memory(to_u16(lsb, msb)));
+    cycles += 2;
+}
+void cp_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    xor8(*r);
+    cycles++;
+}
+void cp_n() {
+    xor8(read_memory(PC++));
+    cycles += 2;
+}
+void cp_hl() {
+    u8 lsb = read_memory(PC++);
+    u8 msb = read_memory(PC++);
+    xor8(read_memory(to_u16(lsb, msb)));
+    cycles += 2;
 }
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
@@ -694,6 +878,99 @@ void decode_opcode() {
         break;
     case 0xC6:
         add_a_n();
+        break;
+    case 0x86:
+        add_a_hl();
+        break;
+    case 0x8F:
+    case 0x88:
+    case 0x89:
+    case 0x8A:
+    case 0x8B:
+    case 0x8C:
+    case 0x8D:
+        adc_a_r();
+        break;
+    case 0xCE:
+        adc_a_n();
+        break;
+    case 0x8E:
+        adc_a_hl();
+        break;
+    case 0x97:
+    case 0x90:
+    case 0x91:
+    case 0x92:
+    case 0x93:
+    case 0x94:
+    case 0x95:
+        sub_r();
+        break;
+    case 0xD6:
+        sub_n();
+        break;
+    case 0x96:
+        sub_hl();
+        break;
+    case 0x9F:
+    case 0x98:
+    case 0x99:
+    case 0x9A:
+    case 0x9B:
+    case 0x9C:
+    case 0x9D:
+        sbc_a_r();
+        break;
+    case 0xDE:
+        sbc_a_n();
+        break;
+    case 0x9E:
+        sbc_a_hl();
+        break;
+    case 0xA7:
+    case 0xA0:
+    case 0xA1:
+    case 0xA2:
+    case 0xA3:
+    case 0xA4:
+    case 0xA5:
+        and_r();
+        break;
+    case 0xE6:
+        and_n();
+        break;
+    case 0xA6:
+        and_hl();
+        break;
+    case 0xB7:
+    case 0xB0:
+    case 0xB1:
+    case 0xB2:
+    case 0xB3:
+    case 0xB4:
+    case 0xB5:
+        or_r();
+        break;
+    case 0xF6:
+        or_n();
+        break;
+    case 0xB6:
+        or_hl();
+        break;
+    case 0xAF:
+    case 0xA8:
+    case 0xA9:
+    case 0xAA:
+    case 0xAB:
+    case 0xAC:
+    case 0xAD:
+        xor_r();
+        break;
+    case 0xEE:
+        xor_n();
+        break;
+    case 0xAE:
+        xor_hl();
         break;
     // JUMPs
     case 0xC3:
