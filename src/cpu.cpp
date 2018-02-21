@@ -257,7 +257,22 @@ void xor8(u8 operand) {
     set_reset_zero(A);
 }
 void cp8(u8 operand) {
-    
+    set_flag(subtract);
+    set_reset_half_borrow8(A, operand);
+    set_reset_borrow8(A, operand);
+    set_reset_zero(A);
+}
+u8 inc8(u8 val) {
+    reset_flag(subtract);
+    set_reset_half_carry8(val, 1);
+    set_reset_zero(++val);
+    return val;
+}
+u8 dec8(u8 val) {
+    set_flag(subtract);
+    set_reset_half_borrow8(val, 1);
+    set_reset_zero(--val);
+    return val;
 }
 void jp_nn() {
     u8 lsb = read_memory(PC++);
@@ -597,9 +612,7 @@ void add_a_n() {
     cycles += 2;
 }
 void add_a_hl() {
-    u8 lsb = read_memory(PC++);
-    u8 msb = read_memory(PC++);
-    add(a, read_memory(to_u16(lsb, msb)));
+    add(a, read_memory(to_u16(L, H)));
     reset_flag(subtract);
     cycles += 2;
 }
@@ -631,9 +644,7 @@ void sub_n() {
     cycles += 2;
 }
 void sub_hl() {
-    u8 lsb = read_memory(PC++);
-    u8 msb = read_memory(PC++);
-    sub(a, read_memory(to_u16(lsb, msb)));
+    sub(a, read_memory(to_u16(L, H)));
     set_flag(subtract);
     cycles += 2;
 }
@@ -663,9 +674,7 @@ void and_n() {
     cycles += 2;
 }
 void and_hl() {
-    u8 lsb = read_memory(PC++);
-    u8 msb = read_memory(PC++);
-    and8(read_memory(to_u16(lsb, msb)));
+    and8(read_memory(to_u16(L, H)));
     cycles += 2;
 }
 void or_r() {
@@ -678,9 +687,7 @@ void or_n() {
     cycles += 2;
 }
 void or_hl() {
-    u8 lsb = read_memory(PC++);
-    u8 msb = read_memory(PC++);
-    or8(read_memory(to_u16(lsb, msb)));
+    or8(read_memory(to_u16(L, H)));
     cycles += 2;
 }
 void xor_r() {
@@ -693,25 +700,39 @@ void xor_n() {
     cycles += 2;
 }
 void xor_hl() {
-    u8 lsb = read_memory(PC++);
-    u8 msb = read_memory(PC++);
-    xor8(read_memory(to_u16(lsb, msb)));
+    xor8(read_memory(to_u16(L, H)));
     cycles += 2;
 }
 void cp_r() {
     u8 *r = get_reg(opcode & 0x07);
-    xor8(*r);
+    cp8(*r);
     cycles++;
 }
 void cp_n() {
-    xor8(read_memory(PC++));
+    cp8(read_memory(PC++));
     cycles += 2;
 }
 void cp_hl() {
-    u8 lsb = read_memory(PC++);
-    u8 msb = read_memory(PC++);
-    xor8(read_memory(to_u16(lsb, msb)));
+    cp8(read_memory(to_u16(L, H)));
     cycles += 2;
+}
+void inc_r() {
+    u8 *r = get_reg((opcode >> 3) & 0x07);
+    *r = inc8(*r);
+    cycles++;
+}
+void inc_hl() {
+    write_memory(to_u16(L, H), inc8(read_memory(to_u16(L, H))));
+    cycles += 3;
+}
+void dec_r() {
+    u8 *r = get_reg((opcode >> 3) & 0x07);
+    *r = dec8(*r);
+    cycles++;
+}
+void dec_hl() {
+    write_memory(to_u16(L, H), dec8(read_memory(to_u16(L, H))));
+    cycles += 3;
 }
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
@@ -971,6 +992,45 @@ void decode_opcode() {
         break;
     case 0xAE:
         xor_hl();
+        break;
+    case 0xBF:
+    case 0xB8:
+    case 0xB9:
+    case 0xBA:
+    case 0xBB:
+    case 0xBC:
+    case 0xBD:
+        cp_r();
+        break;
+    case 0xFE:
+        cp_n();
+        break;
+    case 0xBE:
+        cp_hl();
+        break;
+    case 0x3C:
+    case 0x04:
+    case 0x0C:
+    case 0x14:
+    case 0x1C:
+    case 0x24:
+    case 0x2C:
+        inc_r();
+        break;
+    case 0x34:
+        inc_hl();
+        break;
+    case 0x3D:
+    case 0x05:
+    case 0x0D:
+    case 0x15:
+    case 0x1D:
+    case 0x25:
+    case 0x2D:
+        dec_r();
+        break;
+    case 0x35:
+        dec_hl();
         break;
     // JUMPs
     case 0xC3:
