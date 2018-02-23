@@ -346,6 +346,52 @@ u8 rotate_right(u8 reg) {
     reset_flag(zero);
     return output;
 }
+u8 shift_left(u8 reg) {
+    u8 output;
+    if ((reg & 0x80) == 0x80)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+    output = (reg << 1) & 0xFF;
+    reset_flag(subtract);
+    reset_flag(half_carry);
+    if(output == 0)
+        set_flag(zero);
+    else 
+        reset_flag(zero);
+    return output;
+}
+u8 shift_right(u8 reg, bool change_msg) {
+    u8 output;
+    u8 old_msb = reg & 0x80;
+    if ((reg & 0x01) == 0x01)
+        set_flag(carry);
+    else
+        reset_flag(carry);
+    output = reg >> 1;
+    reset_flag(subtract);
+    reset_flag(half_carry);
+    if(!change_msg)
+        output = output | old_msb;
+    if(output == 0)
+        set_flag(zero);
+    else 
+        reset_flag(zero);
+    return output;
+}
+u8 swap(u8 reg) {
+    u8 lsbit = reg & 0x0F;
+    u8 msbit = reg & 0xF0;
+    u8 output = ((lsbit << 4) | (msbit >> 4)) & 0xFF;
+    reset_flag(carry);
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    if(output == 0)
+        set_flag(zero);
+    else 
+        reset_flag(zero);
+    return output;
+}
 void jp_nn() {
     u8 lsb = read_memory(PC++);
     u8 msb = read_memory(PC++);
@@ -956,6 +1002,46 @@ void rr_hl() {
     write_memory(addr, rotate_right(read_memory(addr)));
     cycles += 4;
 }
+void sla_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = shift_left(*r);
+    cycles += 2;
+}
+void sla_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, shift_left(read_memory(addr)));
+    cycles += 4;
+}
+void sra_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = shift_right(*r, false);
+    cycles += 2;
+}
+void sra_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, shift_right(read_memory(addr), false));
+    cycles += 4;
+}
+void srl_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = shift_right(*r, true);
+    cycles += 2;
+}
+void srl_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, shift_right(read_memory(addr), true));
+    cycles += 4;
+}
+void swap_r() {
+    u8 *r = get_reg(opcode & 0x07);
+    *r = swap(*r);
+    cycles += 2;
+}
+void swap_hl() {
+    u16 addr = to_u16(L, H);
+    write_memory(addr, swap(read_memory(addr)));
+    cycles += 4;
+}
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
     switch (opcode) {
@@ -1339,6 +1425,54 @@ void decode_opcode() {
             break;
         case 0x1E:
             rr_hl();
+            break;
+        case 0x27:
+        case 0x20:
+        case 0x21:
+        case 0x22:
+        case 0x23:
+        case 0x24:
+        case 0x25:
+            sla_r();
+            break;
+        case 0x26:
+            sla_hl();
+            break;
+        case 0x2F:
+        case 0x28:
+        case 0x29:
+        case 0x2A:
+        case 0x2B:
+        case 0x2C:
+        case 0x2D:
+            sra_r();
+            break;
+        case 0x2E:
+            sra_hl();
+            break;
+        case 0x3F:
+        case 0x38:
+        case 0x39:
+        case 0x3A:
+        case 0x3B:
+        case 0x3C:
+        case 0x3D:
+            srl_r();
+            break;
+        case 0x3E:
+            srl_hl();
+            break;
+        case 0x37:
+        case 0x30:
+        case 0x31:
+        case 0x32:
+        case 0x33:
+        case 0x34:
+        case 0x35:
+            swap_r();
+            break;
+        case 0x36:
+            swap_hl();
             break;
         }
         break;
