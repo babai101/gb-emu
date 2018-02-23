@@ -6,6 +6,7 @@
 namespace CPU {
 u8 memory[65536];
 u8 A, B, C, D, E, F, H, L, opcode;
+bool IME = false;
 u8 *a = &A;
 u8 *b = &B;
 u8 *c = &C;
@@ -355,9 +356,9 @@ u8 shift_left(u8 reg) {
     output = (reg << 1) & 0xFF;
     reset_flag(subtract);
     reset_flag(half_carry);
-    if(output == 0)
+    if (output == 0)
         set_flag(zero);
-    else 
+    else
         reset_flag(zero);
     return output;
 }
@@ -371,11 +372,11 @@ u8 shift_right(u8 reg, bool change_msg) {
     output = reg >> 1;
     reset_flag(subtract);
     reset_flag(half_carry);
-    if(!change_msg)
+    if (!change_msg)
         output = output | old_msb;
-    if(output == 0)
+    if (output == 0)
         set_flag(zero);
-    else 
+    else
         reset_flag(zero);
     return output;
 }
@@ -386,31 +387,31 @@ u8 swap(u8 reg) {
     reset_flag(carry);
     reset_flag(half_carry);
     reset_flag(subtract);
-    if(output == 0)
+    if (output == 0)
         set_flag(zero);
-    else 
+    else
         reset_flag(zero);
     return output;
 }
 void bit_test(u8 reg, u8 bit) {
-    if(((reg >> bit) & 0x01) == 0x01)
+    if (((reg >> bit) & 0x01) == 0x01)
         set_flag(zero);
-    else 
+    else
         reset_flag(zero);
     set_flag(half_carry);
     reset_flag(subtract);
 }
 u8 bit_set(u8 reg, u8 bit) {
     u8 mask = 0x01 << bit;
-    if(((reg >> bit) & 0x01) == 0x00)
+    if (((reg >> bit) & 0x01) == 0x00)
         reg = reg | mask;
     return reg;
 }
 u8 bit_reset(u8 reg, u8 bit) {
-    for(int i = 0; i <= bit; i++) {
-       reg = reg << 1;
-       if(i > 0)
-        reg = reg | 0x01;
+    for (int i = 0; i <= bit; i++) {
+        reg = reg << 1;
+        if (i > 0)
+            reg = reg | 0x01;
     }
     return reg;
 }
@@ -1094,6 +1095,60 @@ void res_b_hl() {
     write_memory(addr, bit_reset(read_memory(addr), (opcode >> 3) & 0x07));
     cycles += 4;
 }
+void daa() {
+    u8 lsbit = A & 0x0F;
+    if ((lsbit > 0x09) || check_flag(half_carry)) {
+        A += 0x06;
+    }
+    u8 msbit = (A & 0xF0) >> 4;
+    if ((msbit > 0x09) || check_flag(carry)) {
+        A += 0x60;
+        set_flag(carry);
+    } else
+        reset_flag(carry);
+    if (A == 0)
+        set_flag(zero);
+    else
+        reset_flag(zero);
+    reset_flag(half_carry);
+    cycles++;
+}
+void cpl() {
+    A = ~A;
+    set_flag(half_carry);
+    set_flag(subtract);
+    cycles++;
+}
+void nop() { cycles++; }
+void ccf() {
+    if (check_flag(carry))
+        reset_flag(carry);
+    else
+        set_flag(carry);
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    cycles++;
+}
+void scf() {
+    set_flag(carry);
+    reset_flag(half_carry);
+    reset_flag(subtract);
+    cycles++;
+}
+void di() {
+    IME = false;
+    cycles++;
+}
+void ei() {
+    IME = true;
+    cycles++;
+}
+void halt() {
+    // TODO
+}
+void stop() {
+    // TODO
+}
 void fetch_opcode() { opcode = read_memory(PC++); }
 void decode_opcode() {
     switch (opcode) {
@@ -1430,44 +1485,46 @@ void decode_opcode() {
     case 0xCB:
         opcode = read_memory(PC++);
         switch (opcode & 0xC7) {
-            case 0x47:
-            case 0x40:
-            case 0x41:
-            case 0x42:
-            case 0x43:
-            case 0x44:
-            case 0x45:
-                bit_b_r();
-                return;
-            case 0x46:
-                bit_b_hl();
-                return;
-            case 0xC7:
-            case 0xC0:
-            case 0xC1:
-            case 0xC2:
-            case 0xC3:
-            case 0xC4:
-            case 0xC5:
-                set_b_r();
-                return;
-            case 0xC6:
-                set_b_hl();
-                return;
-            case 0x87:
-            case 0x80:
-            case 0x81:
-            case 0x82:
-            case 0x83:
-            case 0x84:
-            case 0x85:
-                res_b_r();
-                return;
-            case 0x86:
-                res_b_hl();
-                return;
-            default: std::cout << "Unknown opcode: CB,  " << std::hex << opcode << std::endl;
-                return;
+        case 0x47:
+        case 0x40:
+        case 0x41:
+        case 0x42:
+        case 0x43:
+        case 0x44:
+        case 0x45:
+            bit_b_r();
+            return;
+        case 0x46:
+            bit_b_hl();
+            return;
+        case 0xC7:
+        case 0xC0:
+        case 0xC1:
+        case 0xC2:
+        case 0xC3:
+        case 0xC4:
+        case 0xC5:
+            set_b_r();
+            return;
+        case 0xC6:
+            set_b_hl();
+            return;
+        case 0x87:
+        case 0x80:
+        case 0x81:
+        case 0x82:
+        case 0x83:
+        case 0x84:
+        case 0x85:
+            res_b_r();
+            return;
+        case 0x86:
+            res_b_hl();
+            return;
+        default:
+            std::cout << "Unknown opcode: CB,  " << std::hex << opcode
+                      << std::endl;
+            return;
             return;
         }
         switch (opcode) {
@@ -1567,10 +1624,43 @@ void decode_opcode() {
         case 0x36:
             swap_hl();
             break;
-        default: std::cout << "Unknown opcode: CB,  " << std::hex << opcode << std::endl;
-        break;
+        default:
+            std::cout << "Unknown opcode: CB,  " << std::hex << opcode
+                      << std::endl;
+            break;
         }
         break;
+    // General-Purpose Arithmetic Operations and CPU Control Instructions
+    case 0x27:
+        daa();
+        break;
+    case 0x2F:
+        cpl();
+        break;
+    case 0x00:
+        nop();
+        break;
+    case 0x3F:
+        ccf();
+        break;
+    case 0x37:
+        scf();
+        break;
+    case 0xF3:
+        di();
+        break;
+    case 0xFB:
+        ei();
+        break;
+    case 0x76:
+        halt();
+        break;
+    case 0x10:
+        opcode = read_memory(PC++);
+        if (opcode == 0x00) {
+            stop();
+            return;
+        }
     // JUMPs
     case 0xC3:
         jp_nn();
