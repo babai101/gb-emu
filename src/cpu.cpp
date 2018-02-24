@@ -1,4 +1,5 @@
 #include "include/cpu.hpp"
+#include "include/ppu.hpp"
 #include <array>
 #include <cstdint>
 #include <iostream>
@@ -81,10 +82,11 @@ void seed() {
 }
 u8 read_memory(u16 addr) {
     // TODO: Mirroring logic and events
-    return 0;
+    return memory[addr];
 }
 void write_memory(u16 addr, u8 val) {
     // TODO: Mirroring logic and events
+    memory[addr] = val;
 }
 u16 to_u16(u8 lsb, u8 msb) {
     u16 temp = (msb << 8) | lsb;
@@ -117,13 +119,25 @@ u8 *get_reg(u8 val) {
 bool check_flag(enum flags f) {
     switch (f) {
     case zero:
-        break;
+        if ((F >> 7) == 0x01)
+            return true;
+        else
+            return false;
     case subtract:
-        break;
+        if (((F >> 6) & 0x01) == 0x01)
+            return true;
+        else
+            return false;
     case half_carry:
-        break;
+        if (((F >> 5) & 0x01) == 0x01)
+            return true;
+        else
+            return false;
     case carry:
-        break;
+        if (((F >> 4) & 0x01) == 0x01)
+            return true;
+        else
+            return false;
     }
     return true; // stub
 }
@@ -419,11 +433,11 @@ void jp_nn() {
     u8 lsb = read_memory(PC++);
     u8 msb = read_memory(PC++);
     PC = to_u16(lsb, msb);
-    cycles += 4;
+    cycles = 4;
 }
 void jp_hl() {
     PC = to_u16(L, H);
-    cycles += 1;
+    cycles = 1;
 }
 void jp_cc_nn() {
     u8 lsb = read_memory(PC++);
@@ -443,7 +457,7 @@ void jp_cc_nn() {
         result = check_flag(carry);
         break;
     }
-    cycles += 3;
+    cycles = 3;
     if (result) {
         PC = to_u16(lsb, msb);
         cycles++;
@@ -452,7 +466,7 @@ void jp_cc_nn() {
 void jr_r() {
     s8 r = read_memory(PC++);
     PC += r;
-    cycles += 3;
+    cycles = 3;
 }
 void jr_cc_r() {
     s8 r = read_memory(PC++);
@@ -472,7 +486,7 @@ void jr_cc_r() {
         result = check_flag(carry);
         break;
     }
-    cycles += 2;
+    cycles = 2;
     if (result) {
         PC += r;
         cycles++;
@@ -485,7 +499,7 @@ void call_nn() {
     write_memory(--SP, msb(PC));
     write_memory(--SP, lsb(PC));
     PC = nn;
-    cycles += 6;
+    cycles = 6;
 }
 void call_cc_nn() {
     u8 addr_lsb = read_memory(PC++);
@@ -506,7 +520,7 @@ void call_cc_nn() {
         result = check_flag(carry);
         break;
     }
-    cycles += 3;
+    cycles = 3;
     if (result) {
         write_memory(--SP, msb(PC));
         write_memory(--SP, lsb(PC));
@@ -518,7 +532,7 @@ void ret() {
     u8 lsb = read_memory(SP++);
     u8 msb = read_memory(SP++);
     PC = to_u16(lsb, msb);
-    cycles += 4;
+    cycles = 4;
 }
 void ret_cc() {
     bool result = false;
@@ -536,7 +550,7 @@ void ret_cc() {
         result = check_flag(carry);
         break;
     }
-    cycles += 2;
+    cycles = 2;
     if (result) {
         u8 ret_lsb = read_memory(SP++);
         u8 ret_msb = read_memory(SP++);
@@ -548,7 +562,7 @@ void reti() {
     u8 ret_lsb = read_memory(SP++);
     u8 ret_msb = read_memory(SP++);
     PC = to_u16(ret_lsb, ret_msb);
-    cycles += 4;
+    cycles = 4;
     // TODO IME = 1;
 }
 void rst_n() {
@@ -557,105 +571,105 @@ void rst_n() {
     write_memory(--SP, msb(PC));
     write_memory(--SP, lsb(PC));
     PC = to_u16(rst_addr, 0x00);
-    cycles += 4;
+    cycles = 4;
 }
 void ld_r_r() {
     u8 *r1 = get_reg((opcode >> 3) & 0x07);
     u8 *r2 = get_reg(opcode & 0x07);
     *r1 = *r2;
-    cycles++;
+    cycles = 1;
 }
 void ld_r_n() {
     u8 *r = get_reg((opcode >> 3) & 0x07);
     *r = read_memory(PC++);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_r_hl() {
     u8 *r = get_reg((opcode >> 3) & 0x07);
     *r = read_memory(to_u16(L, H));
-    cycles += 2;
+    cycles = 2;
 }
 void ld_hl_r() {
     u8 *r = get_reg(opcode & 0x07);
     write_memory(to_u16(L, H), *r);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_hl_n() {
     u8 n = read_memory(PC++);
     write_memory(to_u16(L, H), n);
-    cycles += 3;
+    cycles = 3;
 }
 void ld_a_bc() {
     A = read_memory(to_u16(C, B));
-    cycles += 2;
+    cycles = 2;
 }
 void ld_a_de() {
     A = read_memory(to_u16(E, D));
-    cycles += 2;
+    cycles = 2;
 }
 void ld_a_c() {
     A = read_memory(0xFF00 + read_memory(C));
-    cycles += 2;
+    cycles = 2;
 }
 void ld_c_a() {
     write_memory((0xFF00 + C), A);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_a_n() {
     A = read_memory(0xFF00 + read_memory(PC++));
-    cycles += 3;
+    cycles = 3;
 }
 void ld_n_a() {
     write_memory(0xFF00 + read_memory(PC++), A);
-    cycles += 3;
+    cycles = 3;
 }
 void ld_a_nn() {
     u8 lsb = read_memory(PC++);
     u8 msb = read_memory(PC++);
     A = read_memory(to_u16(lsb, msb));
-    cycles += 4;
+    cycles = 4;
 }
 void ld_nn_a() {
     u8 lsb = read_memory(PC++);
     u8 msb = read_memory(PC++);
     write_memory(to_u16(lsb, msb), A);
-    cycles += 4;
+    cycles = 4;
 }
 void ld_a_hli() {
     u16 addr = to_u16(L, H);
     A = read_memory(addr++);
     L = lsb(addr);
     H = msb(addr);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_a_hld() {
     u16 addr = to_u16(L, H);
     A = read_memory(addr--);
     L = lsb(addr);
     H = msb(addr);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_bc_a() {
     write_memory(to_u16(C, B), A);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_de_a() {
     write_memory(to_u16(E, D), A);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_hli_a() {
     u16 addr = to_u16(L, H);
     write_memory(addr++, A);
     L = lsb(addr);
     H = msb(addr);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_hld_a() {
     u16 addr = to_u16(L, H);
     write_memory(addr--, A);
     L = lsb(addr);
     H = msb(addr);
-    cycles += 2;
+    cycles = 2;
 }
 void ld_dd_nn() {
     u8 lsb = read_memory(PC++);
@@ -674,11 +688,11 @@ void ld_dd_nn() {
         SP = to_u16(lsb, msb);
         break;
     }
-    cycles += 3;
+    cycles = 3;
 }
 void ld_sp_hl() {
     SP = to_u16(L, H);
-    cycles += 2;
+    cycles = 2;
 }
 void push_qq() {
     u8 lsb, msb;
@@ -698,7 +712,7 @@ void push_qq() {
     }
     write_memory(--SP, msb);
     write_memory(--SP, lsb);
-    cycles += 4;
+    cycles = 4;
 }
 void pop_qq() {
     u8 lsb = read_memory(SP++);
@@ -717,7 +731,7 @@ void pop_qq() {
         H = msb, L = lsb;
         break;
     }
-    cycles += 3;
+    cycles = 3;
 }
 void ldhl_sp_e() {
     s8 e = read_memory(PC++);
@@ -730,7 +744,7 @@ void ldhl_sp_e() {
     else
         reset_flag(carry);
     set_reset_half_carry16(SP, e);
-    cycles += 3;
+    cycles = 3;
 }
 void ld_nn_sp() {
     u8 lsb_addr = read_memory(PC++);
@@ -738,142 +752,142 @@ void ld_nn_sp() {
     u16 addr = to_u16(lsb_addr, msb_addr);
     write_memory(addr, lsb(SP));
     write_memory(addr + 1, msb(SP));
-    cycles += 5;
+    cycles = 5;
 }
 void add_a_r() {
     u8 *r = get_reg(opcode & 0x07);
     add(a, *r);
     reset_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void add_a_n() {
     u8 n = read_memory(PC++);
     add(a, n);
     reset_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void add_a_hl() {
     add(a, read_memory(to_u16(L, H)));
     reset_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void adc_a_r() {
     u8 *r = get_reg(opcode & 0x07);
     addc(a, *r);
     reset_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void adc_a_n() {
     addc(a, read_memory(PC++));
     reset_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void adc_a_hl() {
     addc(a, read_memory(to_u16(L, H)));
     reset_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void sub_r() {
     u8 *r = get_reg(opcode & 0x07);
     sub(a, *r);
     set_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void sub_n() {
     sub(a, read_memory(PC++));
     set_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void sub_hl() {
     sub(a, read_memory(to_u16(L, H)));
     set_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void sbc_a_r() {
     u8 *r = get_reg(opcode & 0x07);
     subc(a, *r);
     set_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void sbc_a_n() {
     subc(a, read_memory(PC++));
     set_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void sbc_a_hl() {
     subc(a, read_memory(to_u16(L, H)));
     set_flag(subtract);
-    cycles += 2;
+    cycles = 2;
 }
 void and_r() {
     u8 *r = get_reg(opcode & 0x07);
     and8(*r);
-    cycles++;
+    cycles = 1;
 }
 void and_n() {
     and8(read_memory(PC++));
-    cycles += 2;
+    cycles = 2;
 }
 void and_hl() {
     and8(read_memory(to_u16(L, H)));
-    cycles += 2;
+    cycles = 2;
 }
 void or_r() {
     u8 *r = get_reg(opcode & 0x07);
     or8(*r);
-    cycles++;
+    cycles = 1;
 }
 void or_n() {
     or8(read_memory(PC++));
-    cycles += 2;
+    cycles = 2;
 }
 void or_hl() {
     or8(read_memory(to_u16(L, H)));
-    cycles += 2;
+    cycles = 2;
 }
 void xor_r() {
     u8 *r = get_reg(opcode & 0x07);
     xor8(*r);
-    cycles++;
+    cycles = 1;
 }
 void xor_n() {
     xor8(read_memory(PC++));
-    cycles += 2;
+    cycles = 2;
 }
 void xor_hl() {
     xor8(read_memory(to_u16(L, H)));
-    cycles += 2;
+    cycles = 2;
 }
 void cp_r() {
     u8 *r = get_reg(opcode & 0x07);
     cp8(*r);
-    cycles++;
+    cycles = 1;
 }
 void cp_n() {
     cp8(read_memory(PC++));
-    cycles += 2;
+    cycles = 2;
 }
 void cp_hl() {
     cp8(read_memory(to_u16(L, H)));
-    cycles += 2;
+    cycles = 2;
 }
 void inc_r() {
     u8 *r = get_reg((opcode >> 3) & 0x07);
     *r = inc8(*r);
-    cycles++;
+    cycles = 1;
 }
 void inc_hl() {
     write_memory(to_u16(L, H), inc8(read_memory(to_u16(L, H))));
-    cycles += 3;
+    cycles = 3;
 }
 void dec_r() {
     u8 *r = get_reg((opcode >> 3) & 0x07);
     *r = dec8(*r);
-    cycles++;
+    cycles = 1;
 }
 void dec_hl() {
     write_memory(to_u16(L, H), dec8(read_memory(to_u16(L, H))));
-    cycles += 3;
+    cycles = 3;
 }
 void add_hl_ss() {
     u8 msb_reg, lsb_reg;
@@ -894,12 +908,12 @@ void add_hl_ss() {
     u16 temp = add16(to_u16(L, H), to_u16(lsb_reg, msb_reg));
     H = msb(temp);
     L = lsb(temp);
-    cycles += 2;
+    cycles = 2;
 }
 void add_sp_e() {
     SP = add16(SP, to_u16(read_memory(PC++), 0x00));
     reset_flag(zero);
-    cycles += 4;
+    cycles = 4;
 }
 void inc_ss() {
     u8 msb_reg, lsb_reg;
@@ -933,7 +947,7 @@ void inc_ss() {
         SP = temp;
         break;
     }
-    cycles += 2;
+    cycles = 2;
 }
 void dec_ss() {
     u8 msb_reg, lsb_reg;
@@ -967,133 +981,133 @@ void dec_ss() {
         SP = temp;
         break;
     }
-    cycles += 2;
+    cycles = 2;
 }
 void rlca() {
     A = rotate_left_carry(A);
-    cycles++;
+    cycles = 1;
 }
 void rla() {
     A = rotate_left(A);
-    cycles++;
+    cycles = 1;
 }
 void rrca() {
     A = rotate_right_carry(A);
-    cycles++;
+    cycles = 1;
 }
 void rra() {
     A = rotate_right(A);
-    cycles++;
+    cycles = 1;
 }
 void rlc_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = rotate_left_carry(*r);
-    cycles += 2;
+    cycles = 2;
 }
 void rlc_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, rotate_left_carry(read_memory(addr)));
-    cycles += 4;
+    cycles = 4;
 }
 void rl_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = rotate_left(*r);
-    cycles += 2;
+    cycles = 2;
 }
 void rl_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, rotate_left(read_memory(addr)));
-    cycles += 4;
+    cycles = 4;
 }
 void rrc_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = rotate_right_carry(*r);
-    cycles += 2;
+    cycles = 2;
 }
 void rrc_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, rotate_right_carry(read_memory(addr)));
-    cycles += 4;
+    cycles = 4;
 }
 void rr_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = rotate_right(*r);
-    cycles += 2;
+    cycles = 2;
 }
 void rr_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, rotate_right(read_memory(addr)));
-    cycles += 4;
+    cycles = 4;
 }
 void sla_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = shift_left(*r);
-    cycles += 2;
+    cycles = 2;
 }
 void sla_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, shift_left(read_memory(addr)));
-    cycles += 4;
+    cycles = 4;
 }
 void sra_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = shift_right(*r, false);
-    cycles += 2;
+    cycles = 2;
 }
 void sra_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, shift_right(read_memory(addr), false));
-    cycles += 4;
+    cycles = 4;
 }
 void srl_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = shift_right(*r, true);
-    cycles += 2;
+    cycles = 2;
 }
 void srl_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, shift_right(read_memory(addr), true));
-    cycles += 4;
+    cycles = 4;
 }
 void swap_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = swap(*r);
-    cycles += 2;
+    cycles = 2;
 }
 void swap_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, swap(read_memory(addr)));
-    cycles += 4;
+    cycles = 4;
 }
 void bit_b_r() {
     u8 *r = get_reg(opcode & 0x07);
     bit_test(*r, (opcode >> 3) & 0x07);
-    cycles += 2;
+    cycles = 2;
 }
 void bit_b_hl() {
     u16 addr = to_u16(L, H);
     bit_test(read_memory(addr), (opcode >> 3) & 0x07);
-    cycles += 3;
+    cycles = 3;
 }
 void set_b_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = bit_set(*r, (opcode >> 3) & 0x07);
-    cycles += 2;
+    cycles = 2;
 }
 void set_b_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, bit_set(read_memory(addr), (opcode >> 3) & 0x07));
-    cycles += 3;
+    cycles = 3;
 }
 void res_b_r() {
     u8 *r = get_reg(opcode & 0x07);
     *r = bit_reset(*r, (opcode >> 3) & 0x07);
-    cycles += 2;
+    cycles = 2;
 }
 void res_b_hl() {
     u16 addr = to_u16(L, H);
     write_memory(addr, bit_reset(read_memory(addr), (opcode >> 3) & 0x07));
-    cycles += 4;
+    cycles = 4;
 }
 void daa() {
     u8 lsbit = A & 0x0F;
@@ -1111,13 +1125,13 @@ void daa() {
     else
         reset_flag(zero);
     reset_flag(half_carry);
-    cycles++;
+    cycles = 1;
 }
 void cpl() {
     A = ~A;
     set_flag(half_carry);
     set_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void nop() { cycles++; }
 void ccf() {
@@ -1127,21 +1141,21 @@ void ccf() {
         set_flag(carry);
     reset_flag(half_carry);
     reset_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void scf() {
     set_flag(carry);
     reset_flag(half_carry);
     reset_flag(subtract);
-    cycles++;
+    cycles = 1;
 }
 void di() {
     IME = false;
-    cycles++;
+    cycles = 1;
 }
 void ei() {
     IME = true;
-    cycles++;
+    cycles = 1;
 }
 void halt() {
     // TODO
@@ -1168,6 +1182,7 @@ void decode_opcode() {
     case 0x43:
     case 0x44:
     case 0x45:
+    case 0x47:
     // LD to C
     case 0x48:
     case 0x49:
@@ -1175,6 +1190,7 @@ void decode_opcode() {
     case 0x4B:
     case 0x4C:
     case 0x4D:
+    case 0x4F:
     // LD to D
     case 0x50:
     case 0x51:
@@ -1189,6 +1205,7 @@ void decode_opcode() {
     case 0x5B:
     case 0x5C:
     case 0x5D:
+    case 0x5F:
     // LD to H
     case 0x60:
     case 0x61:
@@ -1203,6 +1220,7 @@ void decode_opcode() {
     case 0x6B:
     case 0x6C:
     case 0x6D:
+    case 0x6F:
         ld_r_r();
         break;
     case 0x06:
@@ -1211,6 +1229,7 @@ void decode_opcode() {
     case 0x1E:
     case 0x26:
     case 0x2E:
+    case 0x3E:
         ld_r_n();
         break;
     case 0x7E:
@@ -1228,6 +1247,7 @@ void decode_opcode() {
     case 0x73:
     case 0x74:
     case 0x75:
+    case 0x77:
         ld_hl_r();
         break;
     case 0x36:
@@ -1521,11 +1541,6 @@ void decode_opcode() {
         case 0x86:
             res_b_hl();
             return;
-        default:
-            std::cout << "Unknown opcode: CB,  " << std::hex << opcode
-                      << std::endl;
-            return;
-            return;
         }
         switch (opcode) {
         case 0x07:
@@ -1628,6 +1643,7 @@ void decode_opcode() {
             std::cout << "Unknown opcode: CB,  " << std::hex << opcode
                       << std::endl;
             break;
+            exit(3);
         }
         break;
     // General-Purpose Arithmetic Operations and CPU Control Instructions
@@ -1661,6 +1677,7 @@ void decode_opcode() {
             stop();
             return;
         }
+        break;
     // JUMPs
     case 0xC3:
         jp_nn();
@@ -1719,13 +1736,19 @@ void decode_opcode() {
         break;
     default:
         std::cout << "Unknown opcode: " << std::hex << opcode << std::endl;
+        exit(1);
         break;
     }
 }
 int run() {
     while (true) {
         fetch_opcode();
+        std::cout << "PC: " << std::hex << int(PC - 1)
+                  << " opcode: " << std::hex << int(opcode) << std::endl;
         decode_opcode();
+        for (u8 i = 0; i < cycles; i++) {
+            PPU::tick();
+        }
     }
     return 0;
 }
