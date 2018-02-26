@@ -14,6 +14,9 @@ elseif (${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC")
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
 	endif()
 endif()
-include_directories(${gb-emu_SOURCE_DIR}/src/include)
-add_executable(gb-emu src/main.cpp src/cpu.cpp src/bootloader.cpp src/ppu.cpp)
+
+find_package(SDL2 REQUIRED)
+
+include_directories(${SDL2_INCLUDE_DIRS} ${gb-emu_SOURCE_DIR}/src/include)
+add_executable(gb-emu src/main.cpp src/cpu.cpp src/bootloader.cpp src/ppu.cpp src/gui.cpp)
 install(TARGETS gb-emu RUNTIME DESTINATION ${BIN_DIR})

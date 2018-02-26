@@ -1276,6 +1276,7 @@ void decode_opcode() {
         break;
     case 0xEA:
         ld_nn_a();
+        break;
     case 0x2A:
         ld_a_hli();
         break;

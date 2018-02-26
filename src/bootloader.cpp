@@ -1,5 +1,4 @@
-#include "include/bootloader.hpp"
-#include "include/cpu.hpp"
+#include "bootloader.hpp"
 #include <fstream>
 #include <iostream>
 #include <string>

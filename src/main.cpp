@@ -1,12 +1,8 @@
-#include "include/bootloader.hpp"
-#include "include/cpu.hpp"
+#include "gui.hpp"
 #include <iostream>
 
 int main(int argc, char **argv) {
-    CPU::reset();
-    if (!bootloader::load(argv[1])) {
-        std::cout << "Failed to load ROM...Quitting" << std::endl;
-    }
-    CPU::run();
+    GUI::init(argv[1]);
+    GUI::run();
     return 0;
 }
