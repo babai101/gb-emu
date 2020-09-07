@@ -19,4 +19,6 @@ find_package(SDL2 REQUIRED)
 
 include_directories(${SDL2_INCLUDE_DIRS} ${gb-emu_SOURCE_DIR}/src/include)
 add_executable(gb-emu src/main.cpp src/cpu.cpp src/bootloader.cpp src/ppu.cpp src/gui.cpp)
+TARGET_LINK_LIBRARIES(gb-emu ${SDL2_LIBRARIES} ${SDL2IMAGE_LIBRARIES})
+target_compile_features(gb-emu PRIVATE cxx_std_17)
 install(TARGETS gb-emu RUNTIME DESTINATION ${BIN_DIR})

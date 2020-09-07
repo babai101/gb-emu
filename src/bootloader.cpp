@@ -22,7 +22,7 @@ char *load_cart(char *rom_name) {
     std::streampos rom_file_end;
     std::cout << "Loading rom " << rom_name << std::endl;
     std::ifstream rom(rom_name, std::ifstream::ate | std::ifstream::binary);
-    if ((rom_file_end = rom.tellg()) != 32768) {
+    if ((rom_file_end = rom.tellg()) > 32768) {
         std::cout << "Rom size > 32k .. Mappers not implemented yet"
                   << std::endl;
         cart = new char[0];
