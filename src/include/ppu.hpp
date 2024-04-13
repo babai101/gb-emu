@@ -14,10 +14,15 @@
 
 namespace PPU
 {
-    std::vector<std::vector<std::vector<u8>>> build_chrgrid(u16);
-    void build_chrgrid_half(u16, std::vector<std::vector<std::vector<u8>>>&);
+    extern u8 mode;
+    extern int scanline;
+    extern int main_cycles;
+    std::vector<std::vector<std::vector<u8> >> build_chrgrid(u16);
+    void build_chrgrid_half(u16, std::vector<std::vector<std::vector<u8> >>&);
     void tick();
     void render_scanline();
     void reset();
     void render_offscreen_buffer();
+    void renderBGTiles();
+    void render_sprite_tiles();
 } // namespace PPU

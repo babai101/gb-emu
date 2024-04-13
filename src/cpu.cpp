@@ -10,6 +10,7 @@ namespace CPU
     u8 memory[65536];
     u8 A, B, C, D, E, F, H, L, opcode;
     bool IME = false;
+    bool dma_transferred = false;
     u8 *a = &A;
     u8 *b = &B;
     u8 *c = &C;
@@ -23,6 +24,10 @@ namespace CPU
         {0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38}};
     int cycles = 0;
     int cycles_this_frame = 0;
+    int div_cycles = 0;
+    int div_clock = 256;
+    int tima_cycles = 0;
+    int tima_clock = 1024;
     const int CYCLES_PER_FRAME = 70224;
     bool error_occurred = false;
     void reset()
@@ -59,42 +64,43 @@ namespace CPU
         H = 0x01;
         L = 0x4D;
         SP = 0xFFFE;
-
+        memory[0xFF00] = 0xFF; // JOYPAD
+        memory[0xFF04] = 0x00; // DIV
         memory[0xFF05] = 0x00; // TIMA
         memory[0xFF06] = 0x00; // TMA
         memory[0xFF07] = 0x00; // TAC
-        memory[0xFF10] = 0x80; // NR10
-        memory[0xFF11] = 0xBF; // NR11
-        memory[0xFF12] = 0xF3; // NR12
-        memory[0xFF14] = 0xBF; // NR14
-        memory[0xFF16] = 0x3F; // NR21
-        memory[0xFF17] = 0x00; // NR22
-        memory[0xFF19] = 0xBF; // NR24
-        memory[0xFF1A] = 0x7F; // NR30
-        memory[0xFF1B] = 0xFF; // NR31
-        memory[0xFF1C] = 0x9F; // NR32
-        memory[0xFF1E] = 0xBF; // NR33
-        memory[0xFF20] = 0xFF; // NR41
-        memory[0xFF21] = 0x00; // NR42
-        memory[0xFF22] = 0x00; // NR43
-        memory[0xFF23] = 0xBF; // NR30
-        memory[0xFF24] = 0x77; // NR50
-        memory[0xFF25] = 0xF3; // NR51
+        // memory[0xFF10] = 0x80; // NR10
+        // memory[0xFF11] = 0xBF; // NR11
+        // memory[0xFF12] = 0xF3; // NR12
+        // memory[0xFF14] = 0xBF; // NR14
+        // memory[0xFF16] = 0x3F; // NR21
+        // memory[0xFF17] = 0x00; // NR22
+        // memory[0xFF19] = 0xBF; // NR24
+        // memory[0xFF1A] = 0x7F; // NR30
+        // memory[0xFF1B] = 0xFF; // NR31
+        // memory[0xFF1C] = 0x9F; // NR32
+        // memory[0xFF1E] = 0xBF; // NR33
+        // memory[0xFF20] = 0xFF; // NR41
+        // memory[0xFF21] = 0x00; // NR42
+        // memory[0xFF22] = 0x00; // NR43
+        // memory[0xFF23] = 0xBF; // NR30
+        // memory[0xFF24] = 0x77; // NR50
+        // memory[0xFF25] = 0xF3; // NR51
         if (gb_type == "DMG")
         {
-            memory[0xFF26] = 0xF1; // NR52
+            // memory[0xFF26] = 0xF1; // NR52
         }
         else if (gb_type == "CGB")
         {
             memory[0xFF26] = 0xF0; // NR52
         }
-        memory[0xFF40] = 0x91; // LCDC
+        // memory[0xFF40] = 0x91; // LCDC
         memory[0xFF42] = 0x00; // SCY
         memory[0xFF43] = 0x00; // SCX
         memory[0xFF45] = 0x00; // LYC
-        memory[0xFF47] = 0xFC; // BGP
-        memory[0xFF48] = 0xFF; // OBP0
-        memory[0xFF49] = 0xFF; // OBP1
+        // memory[0xFF47] = 0xFC; // BGP
+        // memory[0xFF48] = 0xFF; // OBP0
+        // memory[0xFF49] = 0xFF; // OBP1
         memory[0xFF4A] = 0x00; // WY
         memory[0xFF4B] = 0x00; // WX
         memory[0xFFFF] = 0x00; // IE
@@ -102,6 +108,13 @@ namespace CPU
     u8 read_memory(u16 addr)
     {
         // TODO: Mirroring logic and events
+        if (addr == 0xFF41)
+            printf("Reading LCD Status FF41 at scanline: %d, current value: %x\n", PPU::scanline, memory[addr]);
+        if (addr >= 0xFEA0 && addr <= 0xFEFF)
+        {
+            printf("Reading from prohibited memory space FEA0-FEFF\n");
+            return 0;
+        }
         return memory[addr];
     }
     void write_memory(u16 addr, u8 val)
@@ -116,6 +129,66 @@ namespace CPU
         //     std::cout << "debug" << std::endl;
         // }
         // TODO: Mirroring logic and events
+        switch (addr)
+        {
+        case TIMA:
+            break;
+        case TMA:
+            break;
+        case TAC:
+            switch (val & 3)
+            {
+            case 0:
+                tima_clock = 1024; // 4096;
+                break;
+            case 1:
+                tima_clock = 16; // 268400;
+                break;
+            case 2:
+                tima_clock = 64; // 67110;
+                break;
+            case 3:
+                tima_clock = 256; // 16780;
+                break;
+            }
+            break;
+        case DIV:
+            memory[DIV] = 0;
+            break;
+        case LCDC:
+            printf("Writing to LCDC at scanline: %d, value: %x\n", PPU::scanline, val);
+            break;
+        case STAT:
+            printf("Writing to LCD STAT at scanline: %d, value: %x\n", PPU::scanline, val);
+            break;
+        case 0xFF45:
+            printf("Writing to LYC at scanline: %d, value: %x\n", PPU::scanline, val);
+            break;
+        case DMA:
+            u16 dma_source = val << 8;
+            for (int i = 0; i < 160; i++)
+            {
+                memory[0xFE00 + i] = memory[dma_source + i];
+            }
+            dma_transferred = true;
+            // printf("DMA transfer complete\n");
+            break;
+        }
+        if (addr >= 0xFE00 && addr <= 0xFE9F)
+        {
+            // if ((addr == 0xFE00) && (val > 16))
+            //     printf("oam writing..\n");
+            if ((PPU::mode > 2) && ((memory[LCDC] & 0x80) == 0x80))
+                return;
+            // printf("OAM written, Addr: %u Val: %u\n", addr, val);
+        }
+        else if (addr >= 0x8000 && addr <= 0x9FFF)
+        {
+            if ((PPU::mode == 3) && ((memory[LCDC] & 0x80) == 0x80))
+                return;
+        }
+        if (addr >= 0xFEA0 && addr <= 0xFEFF)
+            printf("Writing to prohibited memory space FEA0-FEFF\n");
         memory[addr] = val;
     }
     u16 to_u16(u8 lsb, u8 msb)
@@ -1426,16 +1499,16 @@ namespace CPU
     void di()
     {
         IME = false;
-        //disable all interrupt flags
-        write_memory(IE, 0);
+        // disable all interrupt flags
+        // write_memory(IE, 0);
         cycles = 1;
     }
     void ei()
     {
         // std::cout << "IME enabled" << std::endl;
         IME = true;
-        //enable all interrupt flags
-        write_memory(IE, 0x1F);
+        // enable all interrupt flags
+        // write_memory(IE, 0x1F);
         cycles = 1;
     }
     void halt()
@@ -2040,9 +2113,9 @@ namespace CPU
         while (true)
         {
             fetch_opcode();
-            //debug
-            // myfile << "PC: " << std::hex << int(PC - 1)
-            //        << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
+            // debug
+            //  myfile << "PC: " << std::hex << int(PC - 1)
+            //         << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
 
             // //debug
             // std::cout << "PC: " << std::hex << int(PC - 1)
@@ -2050,35 +2123,92 @@ namespace CPU
             decode_opcode();
             if (error_occurred)
                 break;
-            for (u8 i = 0; i < cycles; i++)
+            if (dma_transferred)
+            {
+                cycles += 160;
+                dma_transferred = false;
+            }
+            for (int i = 0; i < cycles; i++)
             {
                 PPU::tick();
             }
+            // Timers
+            div_cycles += cycles;
+            tima_cycles += cycles;
+            if (div_cycles >= div_clock)
+            {
+                div_cycles -= div_clock;
+                // Tick DIV
+                if (memory[DIV] == 0xFF)
+                {
+                    memory[DIV] = 0;
+                }
+                else
+                {
+                    memory[DIV]++;
+                }
+            }
+            if (tima_cycles >= tima_clock)
+            {
+                tima_cycles -= tima_clock;
 
-            //check for IRQs
-            if (read_memory(IF) > 0) //an interrupt is there
+                // check if TIMA counting is enabled
+                if ((memory[TAC] & 0x04) == 0x04)
+                {
+                    // Tick TIMA
+                    if (memory[TIMA] == 0xFF)
+                    {
+                        // TIMA overflow
+                        memory[TIMA] = memory[TMA];
+                        // request interrupt
+                        u8 intrpt = CPU::read_memory(IF);
+                        intrpt &= 0xFB;
+                        intrpt |= 0x04;
+                        CPU::write_memory(IF, intrpt);
+                    }
+                    else
+                        memory[TIMA]++;
+                }
+            }
+
+            // check for IRQs
+            if (read_memory(IF) > 0) // an interrupt is there
             {
                 if (IME)
                 {
                     if ((read_memory(IE) & 0x01) == 0x01)
                     {
-                        //VBlank
-                        //disable interrupt
+                        // VBlank
+                        // disable interrupt
                         if ((read_memory(IF) & 0x01) == 0x01)
                         {
-                            write_memory(IF, read_memory(IF) & 0xFE);
+                            memory[IF] = memory[IF] & 0xFE;
                             IME = false;
+                            printf("Acknowleding VBLANK Interrupt...\n");
                             serve_isr(VSYNCVEC);
                         }
                     }
-                    if ((read_memory(IE) & 0x04) == 0x04)
+                    else if ((memory[IE] & 0x02) == 0x02)
                     {
-                        if ((read_memory(IF) & 0x04) == 0x04)
+                        // LCDSTAT
+                        // disable interrupt
+                        if ((memory[IF] & 0x02) == 0x02)
                         {
-                            //TIMER
-                            //disable interrupt
-                            write_memory(IF, read_memory(IF) & 0xFB);
+                            memory[IF] = memory[IF] & 0xFD;
                             IME = false;
+                            printf("Acknowleding STAT Interrupt...\n");
+                            serve_isr(LCDSTAT);
+                        }
+                    }
+                    else if ((memory[IE] & 0x04) == 0x04)
+                    {
+                        if ((memory[IF] & 0x04) == 0x04)
+                        {
+                            // TIMER
+                            // disable interrupt
+                            memory[IF] = memory[IF] & 0xFB;
+                            IME = false;
+                            printf("Acknowleding TIMER Interrupt...\n");
                             serve_isr(TIMER);
                         }
                     }

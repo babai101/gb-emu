@@ -4,7 +4,13 @@
 #define IE 0xFFFF
 #define IF 0xFF0F
 #define VSYNCVEC 0x0040
+#define LCDSTAT 0x0048
 #define TIMER 0x0050
+#define DIV 0xFF04
+#define TIMA 0xFF05
+#define TMA 0xFF06
+#define TAC 0xFF07
+#define DMA 0xFF46
 
 namespace CPU
 {
