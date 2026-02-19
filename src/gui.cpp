@@ -217,33 +217,88 @@ namespace GUI
         SDL_Event e;
 
         const int FPS = 60;
-        const int DELAY = 1000.0f / FPS;
-        unsigned int frameTime, frameStart;
+        const float DELAY = 1000.0f / FPS;
+        float timeStart, timeEnd;
+        float frameTime, frameStart;
+        unsigned int frameCount = 0;
 
         // While application is running
         while (!quit)
         {
+            if (frameCount == 0)
+                timeStart = SDL_GetTicks();
             frameStart = SDL_GetTicks();
+
+            CPU::memory[JOYP] &= 0xF0;
+            CPU::memory[JOYP] |= 0x0F;
+
             // Handle events on queue
             while (SDL_PollEvent(&e) != 0)
             {
                 // User requests quit
-                if (e.type == SDL_QUIT)
+                // if (e.type == SDL_QUIT)
+                // {
+                //     quit = true;
+                // }
+                switch (e.type)
                 {
+                case SDL_QUIT:
                     quit = true;
+                    // Handle the window close event (e.g., set a 'quit' flag to true)
+                    break;
+                case SDL_KEYDOWN:
+                    // Handle key down event
+                    switch (e.key.keysym.scancode)
+                    {
+                    case SDL_SCANCODE_LEFT:
+                        // Action for 'LEFT' key down
+                        CPU::memory[JOYP] &= 0xFD;
+                        CPU::memory[JOYP] |= 0x02;
+                        break;
+                    case SDL_SCANCODE_RIGHT:
+                        CPU::memory[JOYP] &= 0xCE;
+                        CPU::memory[JOYP] |= 0x20;
+                        break;
+                    case SDL_SCANCODE_UP:
+                        CPU::memory[JOYP] &= 0xFB;
+                        CPU::memory[JOYP] |= 0x04;
+                        break;
+                    case SDL_SCANCODE_DOWN:
+                        CPU::memory[JOYP] &= 0xF7;
+                        CPU::memory[JOYP] |= 0x08;
+                        break;
+                    case SDL_SCANCODE_ESCAPE:
+                        // Action for 'Escape' key down
+                        break;
+                    default:
+                        break;
+                    }
+                    break;
+                case SDL_KEYUP:
+                    // Handle key up event
+                    break;
                 }
             }
             // std::cout << "Running CPU" << std::endl;
             CPU::run();
-            printf("Cycles ran this frame: %d\n", PPU::main_cycles);
+            frameCount++;
+
+            // printf("Frame Count: %d\n", frameCount);
+            // printf("Cycles ran this frame: %d\n", PPU::main_cycles);
             PPU::main_cycles = 0;
             // run nes frame here
             render();
-
+            if (frameCount == 60)
+            {
+                frameCount = 0;
+                timeEnd = SDL_GetTicks() - timeStart;
+                printf("Time to run 60 frames: %f\n", timeEnd / 1000.0);
+            }
             // Wait to mantain framerate:
             frameTime = SDL_GetTicks() - frameStart;
+            // printf("FrameTime = %f DELAY = %f\n", frameTime, DELAY);
             if (frameTime < DELAY)
-                SDL_Delay((int)(DELAY - frameTime));
+                SDL_Delay((float)(DELAY - frameTime));
             update_texture(off_screen_buffer);
             PPU::renderBGTiles();
             update_ppuViewerTexture(bgTiles_screen_buffer);

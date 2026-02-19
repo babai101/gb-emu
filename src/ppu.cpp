@@ -18,6 +18,7 @@ namespace PPU
     std::vector<std::vector<std::vector<u8>>> grid;
     std::vector<std::vector<std::vector<u8>>> window_grid;
     std::vector<std::vector<std::vector<u8>>> sprite_grid;
+
     struct sprite
     {
         u16 sprite_y;
@@ -56,25 +57,19 @@ namespace PPU
             if (cycle == 0)
             {
                 mode = 2;
-                if (scanline == 0)
-                {
-                    // get tile offsets
-                    if ((CPU::memory[LCDC] & 0x08) == 0x08)
-                        bg_map_offset = 0x9C00;
-                    else
-                        bg_map_offset = 0x9800;
-                    if ((CPU::memory[LCDC] & 0x40) == 0x40)
-                        window_map_offset = 0x9C00;
-                    else
-                        window_map_offset = 0x9800;
 
-                    if ((CPU::memory[LCDC] & 0x10) == 0x10)
-                        bg_tile_display_offset = 0x8000;
-                    else
-                        bg_tile_display_offset = 0x8800;
-                    grid = build_chrgrid(bg_tile_display_offset);
-                    window_grid = build_chrgrid(bg_tile_display_offset);
-                    sprite_grid = build_chrgrid(0x8000);
+                // scanning of OAM starts kickoff mode 2
+                u8 temp = CPU::memory[STAT] & 0xFC;
+                temp |= 0x02;
+                CPU::memory[STAT] = temp;
+                // STAT interrupt
+                if ((CPU::memory[STAT] & 0x20) == 0x20)
+                {
+                    u8 intrpt = CPU::memory[IF];
+                    intrpt &= 0xFD;
+                    intrpt |= 0x02;
+                    CPU::memory[IF] = intrpt;
+                    printf("STAT Interrupt, Mode 2 (OAM Scanning) starts..scanline: %d\n", scanline);
                 }
             }
             if (cycle == 80)
@@ -96,7 +91,7 @@ namespace PPU
                     intrpt &= 0xFD;
                     intrpt |= 0x02;
                     CPU::memory[IF] = intrpt;
-                    // printf("STAT Interrupt, Mode 0 (HBLANK) starts..scanline: %d\n", scanline);
+                    printf("STAT Interrupt, Mode 0 (HBLANK) starts..scanline: %d\n", scanline);
                 }
                 mode = 0;
             }
@@ -106,13 +101,14 @@ namespace PPU
                 render_scanline();
                 if (scanline == 143)
                 {
-                    // vblank starts
-                    // request interrupt
+                    // Start of MODE 1
+                    //  vblank starts
+                    //  request interrupt
                     u8 intrpt = CPU::memory[IF];
                     intrpt &= 0xFE;
                     intrpt |= 0x01;
                     CPU::memory[IF] = intrpt;
-                    printf("VBLANK Interrupt, Mode 1 starts..scanline: %d\n", scanline);
+                    // printf("VBLANK Interrupt, Mode 1 starts..scanline: %d\n", scanline);
                     u8 temp = CPU::memory[STAT] & 0xFC;
                     temp |= 0x01;
                     CPU::memory[STAT] = temp;
@@ -123,27 +119,27 @@ namespace PPU
                         intrpt &= 0xFD;
                         intrpt |= 0x02;
                         CPU::memory[IF] = intrpt;
-                        // printf("STAT Interrupt, Mode 1 (VBLANK) starts..scanline: %d\n", scanline);
+                        printf("STAT Interrupt, Mode 1 (VBLANK) starts..scanline: %d\n", scanline);
                     }
                     mode = 1;
                     render_offscreen_buffer();
                 }
                 else
                 {
-                    // scanning of OAM starts kickoff mode 2
-                    u8 temp = CPU::memory[STAT] & 0xFC;
-                    temp |= 0x02;
-                    CPU::memory[STAT] = temp;
-                    // STAT interrupt
-                    if ((CPU::memory[STAT] & 0x20) == 0x20)
-                    {
-                        u8 intrpt = CPU::memory[IF];
-                        intrpt &= 0xFD;
-                        intrpt |= 0x02;
-                        CPU::memory[IF] = intrpt;
-                        // printf("STAT Interrupt, Mode 2 (OAM Scanning) starts..scanline: %d\n", scanline);
-                    }
-                    mode = 2;
+                    // // scanning of OAM starts kickoff mode 2
+                    // u8 temp = CPU::memory[STAT] & 0xFC;
+                    // temp |= 0x02;
+                    // CPU::memory[STAT] = temp;
+                    // // STAT interrupt
+                    // if ((CPU::memory[STAT] & 0x20) == 0x20)
+                    // {
+                    //     u8 intrpt = CPU::memory[IF];
+                    //     intrpt &= 0xFD;
+                    //     intrpt |= 0x02;
+                    //     CPU::memory[IF] = intrpt;
+                    //     // printf("STAT Interrupt, Mode 2 (OAM Scanning) starts..scanline: %d\n", scanline);
+                    // }
+                    // mode = 2;
                 }
             }
         }
@@ -152,14 +148,15 @@ namespace PPU
             // now in vblank
             if (cycle == 455)
             {
-                if (scanline == 153)
-                {
-                    // vblank ends, kick off mode 2
-                    u8 temp = CPU::memory[STAT] & 0xFC;
-                    temp |= 0x02;
-                    CPU::memory[STAT] = temp;
-                    mode = 2;
-                }
+                // if (scanline == 153)
+                // {
+                //     // vblank ends, kick off mode 2
+                //     u8 temp = CPU::memory[STAT] & 0xFC;
+                //     temp |= 0x02;
+                //     CPU::memory[STAT] = temp;
+                //     mode = 2;
+                // }
+                // printf("SCROLLX: %x SCROLL Y: %x\n", CPU::memory[0xFF42], CPU::memory[0xFF43]);
             }
         }
         // printf("cycle: %d\n", cycle);
@@ -175,6 +172,7 @@ namespace PPU
             }
         }
         main_cycles++;
+        // printf("Cycle: %d Scanline: %d Mode: %d\n", cycle, scanline, mode);
     }
 
     int normalize(int x)
@@ -190,202 +188,225 @@ namespace PPU
         // read tile data for current scanline
         // decode tile data
         // render to offscreen buffer
-        if ((CPU::memory[LCDC] & 0x80) == 0x80)
+        // get tile offsets
+        if ((CPU::memory[LCDC] & 0x08) == 0x08)
+            bg_map_offset = 0x9C00;
+        else
+            bg_map_offset = 0x9800;
+        if ((CPU::memory[LCDC] & 0x40) == 0x40)
+            window_map_offset = 0x9C00;
+        else
+            window_map_offset = 0x9800;
+
+        // printf("BG Map Offset: %x\n", bg_map_offset);
+        // bg_map_offset = 0x9800;
+        // if ((CPU::memory[LCDC] & 0x80) == 0x80)
+        //{
+        u8 scroll_x = 0; // CPU::memory[SCX];
+        u8 scroll_y = 0; // CPU::memory[SCY];
+        // u8 window_scroll_x = 0;
+        // u8 window_scroll_y = 0;
+
+        // Now we have the exact tile in tile map that we want to render from
+
+        // loop for each pixel of scanline
+        u8 tile_to_fetch = 0;
+        // u8 sprite_tile_to_fetch = 0;
+
+        u8 tile_coarse_offsetx = scroll_x / 8; // compute which tile corresponds to the scrolling values
+        u8 tile_coarse_offsety = scroll_y / 8;
+
+        // u8 window_tile_coarse_offsetx = window_scroll_x / 8;
+        // u8 window_tile_coarse_offsety = window_scroll_y / 8;
+
+        u8 tile_fine_offsetx = normalize(scroll_x) % 8; // starting pixel X offset of tile to draw from
+        u8 tile_fine_offsety = normalize(scroll_y) % 8; // starting row offset
+
+        // u8 window_tile_fine_offsetx = normalize(window_scroll_x) % 8;
+        // u8 window_tile_fine_offsety = normalize(window_scroll_y) % 8;
+
+        u8 sprite_tile_fine_offsetx = 0;
+        u8 sprite_tile_fine_offsety = 0;
+
+        tile_coarse_offsety += scanline / 8; // Adjust for scanlines rendered
+        tile_fine_offsety = normalize(scanline) % 8;
+        u8 sprites_this_scanline = 0;
+        // search through OAM 40x4 bytes
+        for (int o = 0; o < 160; o += 4)
         {
-            u8 scroll_x = 0; // CPU::memory[SCX];
-            u8 scroll_y = 0; // CPU::memory[SCY];
-            // u8 window_scroll_x = 0;
-            // u8 window_scroll_y = 0;
-
-            // Now we have the exact tile in tile map that we want to render from
-
-            // loop for each pixel of scanline
-            u8 tile_to_fetch = 0;
-            // u8 sprite_tile_to_fetch = 0;
-
-            u8 tile_coarse_offsetx = scroll_x / 8; // compute which tile corresponds to the scrolling values
-            u8 tile_coarse_offsety = scroll_y / 8;
-
-            // u8 window_tile_coarse_offsetx = window_scroll_x / 8;
-            // u8 window_tile_coarse_offsety = window_scroll_y / 8;
-
-            u8 tile_fine_offsetx = normalize(scroll_x) % 8; // starting pixel X offset of tile to draw from
-            u8 tile_fine_offsety = normalize(scroll_y) % 8; // starting row offset
-
-            // u8 window_tile_fine_offsetx = normalize(window_scroll_x) % 8;
-            // u8 window_tile_fine_offsety = normalize(window_scroll_y) % 8;
-
-            u8 sprite_tile_fine_offsetx = 0;
-            u8 sprite_tile_fine_offsety = 0;
-
-            tile_coarse_offsety += scanline / 8; // Adjust for scanlines rendered
-            tile_fine_offsety = normalize(scanline) % 8;
-            u8 sprites_this_scanline = 0;
-            // search through OAM 40x4 bytes
-            for (int o = 0; o < 160; o += 4)
+            // check if sprite Y falls in current scanline
+            u8 sprite_y = CPU::memory[0xFE00 + o] - 16;
+            u8 sprite_x = CPU::memory[0xFE00 + o + 1];
+            u8 sprite_index = CPU::memory[0xFE00 + o + 2];
+            u8 sprite_attr = CPU::memory[0xFE00 + o + 3];
+            // 8x8 sprites
+            if ((sprite_y <= scanline) && (sprite_y >= scanline - 8))
             {
-                // check if sprite Y falls in current scanline
-                u8 sprite_y = CPU::memory[0xFE00 + o] - 16;
-                u8 sprite_x = CPU::memory[0xFE00 + o + 1];
-                u8 sprite_index = CPU::memory[0xFE00 + o + 2];
-                u8 sprite_attr = CPU::memory[0xFE00 + o + 3];
-                // 8x8 sprites
-                if ((sprite_y <= scanline) && (sprite_y >= scanline - 8))
+                // printf("scanline: %i, sprite Y: %i, sprite X: %i\n", scanline, sprite_y, sprite_x);
+                sprites_to_render.push_back(sprite{sprite_y, sprite_x, sprite_index, sprite_attr});
+                sprites_this_scanline++;
+                if (sprites_this_scanline >= 10)
                 {
-                    // printf("scanline: %i, sprite Y: %i, sprite X: %i\n", scanline, sprite_y, sprite_x);
-                    sprites_to_render.push_back(sprite{sprite_y, sprite_x, sprite_index, sprite_attr});
-                    sprites_this_scanline++;
-                    if (sprites_this_scanline >= 10)
-                    {
-                        sprites_this_scanline = 0;
-                        break;
-                    }
+                    sprites_this_scanline = 0;
+                    break;
                 }
             }
-
-            for (int i = 0; i < 160; i++)
-            {
-                // render background
-                if (i > 0)
-                    tile_fine_offsetx++;
-                if (tile_fine_offsetx == 8)
-                {
-                    tile_fine_offsetx = 0;
-                    tile_coarse_offsetx++;
-                }
-                if (tile_coarse_offsetx > 31)
-                {
-                    tile_coarse_offsetx -= 32;
-                }
-                if (tile_coarse_offsety > 31)
-                {
-                    tile_coarse_offsety -= 32;
-                }
-                if ((CPU::memory[LCDC] & 0x01) == 0x01)
-                {
-                    tile_to_fetch = CPU::memory[bg_map_offset + tile_coarse_offsety * 32 + tile_coarse_offsetx];
-                    // We now have the tile and the row to be rendered lets calculate the bytes we have to fetch 2 bytes for one row
-                    // std::vector<std::vector<u8>> tile_data;
-                    std::vector<std::vector<u8>> tile_data = grid[tile_to_fetch];
-                    // if ((CPU::memory[LCDC] & 0x10) == 0x10)
-                    // {
-                    //     std::vector<std::vector<u8>> tile_data = grid[tile_to_fetch];
-                    // }
-                    // else
-                    // {
-                    //     std::vector<std::vector<u8>> tile_data = grid[tile_to_fetch + 128];
-                    // }
-                    u8 palette = CPU::memory[BGP];
-                    u32 pixel_color_num = tile_data[tile_fine_offsety][tile_fine_offsetx];
-
-                    switch (pixel_color_num)
-                    {
-                    case 0:
-                        pixel_color_num = colors[palette & 0x03];
-                        break;
-                    case 1:
-                        pixel_color_num = colors[(palette & 0x0C) >> 2];
-                        break;
-                    case 2:
-                        pixel_color_num = colors[(palette & 0x30) >> 4];
-                        break;
-                    case 3:
-                        pixel_color_num = colors[(palette & 0xC0) >> 6];
-                        break;
-                    }
-                    screen_pixels[scanline][i] = pixel_color_num;
-                }
-
-                // render window
-                // if ((CPU::memory[LCDC] & 0x20) == 0x20)
-                // {
-                //     if ((CPU::memory[LCDC] & 0x01) == 0x01)
-                //     {
-                //         tile_to_fetch = CPU::memory[window_map_offset + window_tile_coarse_offsety * 32 + window_tile_coarse_offsetx];
-                //         // We now have the tile and the row to be rendered lets calculate the bytes we have to fetch 2 bytes for one row
-
-                //         std::vector<std::vector<u8>> tile_data = window_grid[tile_to_fetch];
-                //         u8 palette = CPU::memory[BGP];
-                //         u32 pixel_color_num = tile_data[window_tile_fine_offsety][window_tile_fine_offsetx];
-
-                //         switch (pixel_color_num)
-                //         {
-                //         case 0:
-                //             pixel_color_num = colors[palette & 0x03];
-                //             break;
-                //         case 1:
-                //             pixel_color_num = colors[(palette & 0x0C) >> 2];
-                //             break;
-                //         case 2:
-                //             pixel_color_num = colors[(palette & 0x30) >> 4];
-                //             break;
-                //         case 3:
-                //             pixel_color_num = colors[(palette & 0xC0) >> 6];
-                //             break;
-                //         }
-                //         screen_pixels[scanline][i] = pixel_color_num;
-                //     }
-                // }
-
-                if ((CPU::memory[LCDC] & 0x02) == 0x02)
-                {
-                    u32 sprite_pixel_color_num = 0;
-                    // if((CPU::memory[LCDC] & 0x04) == 0x04)
-                    // {
-                    //     printf("Sprite size: 8x16\n");
-                    // }
-                    // else printf("Sprite size: 8x8\n");
-                    // render sprites
-                    for (auto it : sprites_to_render)
-                    {
-                        if ((it.sprite_x - 8 >= i - 7) && (it.sprite_x - 8 + 8 <= i + 7))
-                        {
-                            // sprite_tile_to_fetch = CPU::memory[0x8000 + it.sprite_index];
-                            // std::vector<std::vector<u8>> sprite_tile_data = sprite_grid[sprite_tile_to_fetch];
-                            std::vector<std::vector<u8>> sprite_tile_data = sprite_grid[it.sprite_index];
-                            u8 sprite_palette = 0;
-                            if ((it.sprite_attr & 0x10) == 0x10)
-                            {
-                                sprite_palette = CPU::memory[OBP1];
-                            }
-                            else
-                            {
-                                sprite_palette = CPU::memory[OBP0];
-                            }
-                            sprite_tile_fine_offsety = normalize(scanline) % 8;
-                            if ((it.sprite_attr & 0x40) == 0x40)
-                            {
-                                // Y flip
-                                sprite_tile_fine_offsety = std::abs(8 - sprite_tile_fine_offsety);
-                            }
-                            sprite_tile_fine_offsetx = normalize(i) % 8;
-                            if ((it.sprite_attr & 0x20) == 0x20)
-                            {
-                                // X flip
-                                sprite_tile_fine_offsetx = std::abs(8 - sprite_tile_fine_offsetx);
-                            }
-                            sprite_pixel_color_num = sprite_tile_data[sprite_tile_fine_offsety][sprite_tile_fine_offsetx];
-                            switch (sprite_pixel_color_num)
-                            {
-                            case 1:
-                                sprite_pixel_color_num = colors[(sprite_palette & 0x0C) >> 2];
-                                break;
-                            case 2:
-                                sprite_pixel_color_num = colors[(sprite_palette & 0x30) >> 4];
-                                break;
-                            case 3:
-                                sprite_pixel_color_num = colors[(sprite_palette & 0xC0) >> 6];
-                                break;
-                            }
-                            if ((it.sprite_attr & 0x80) != 0x80)
-                                screen_pixels[scanline][i] = sprite_pixel_color_num;
-                        }
-                    }
-                }
-            }
-            sprites_to_render.clear();
-            sprites_this_scanline = 0;
         }
+
+        for (int i = 0; i < 160; i++)
+        {
+            // render background
+            if (i > 0)
+                tile_fine_offsetx++;
+            if (tile_fine_offsetx == 8)
+            {
+                tile_fine_offsetx = 0;
+                tile_coarse_offsetx++;
+            }
+            if (tile_coarse_offsetx > 31)
+            {
+                tile_coarse_offsetx -= 32;
+            }
+            if (tile_coarse_offsety > 31)
+            {
+                tile_coarse_offsety -= 32;
+            }
+            if ((CPU::memory[LCDC] & 0x01) == 0x01)
+            {
+                tile_to_fetch = CPU::memory[bg_map_offset + tile_coarse_offsety * 32 + tile_coarse_offsetx];
+                // DEBUG STARTS
+                //  if (scanline == 0 &&  i == 0)
+                //  {
+                //      printf("First Tile Map tile index: %x\n", tile_to_fetch);
+                //      if (tile_to_fetch == 0x2F)
+                //      {
+                //          printf("bg_map_offset: %x tile_coarse_offsety: %d tile_coarse_offsetx: %d\n", bg_map_offset, tile_coarse_offsety, tile_coarse_offsetx);
+                //      }
+                //  }
+                // DEBUG ENDS
+
+                // We now have the tile and the row to be rendered lets calculate the bytes we have to fetch 2 bytes for one row
+                // std::vector<std::vector<u8>> tile_data;
+                std::vector<std::vector<u8>> tile_data = grid[tile_to_fetch];
+                // if ((CPU::memory[LCDC] & 0x10) == 0x10)
+                // {
+                //     std::vector<std::vector<u8>> tile_data = grid[tile_to_fetch];
+                // }
+                // else
+                // {
+                //     std::vector<std::vector<u8>> tile_data = grid[tile_to_fetch + 128];
+                // }
+                u8 palette = CPU::memory[BGP];
+                u32 pixel_color_num = tile_data[tile_fine_offsety][tile_fine_offsetx];
+
+                switch (pixel_color_num)
+                {
+                case 0:
+                    pixel_color_num = colors[palette & 0x03];
+                    break;
+                case 1:
+                    pixel_color_num = colors[(palette & 0x0C) >> 2];
+                    break;
+                case 2:
+                    pixel_color_num = colors[(palette & 0x30) >> 4];
+                    break;
+                case 3:
+                    pixel_color_num = colors[(palette & 0xC0) >> 6];
+                    break;
+                }
+                screen_pixels[scanline][i] = pixel_color_num;
+            }
+
+            // render window
+            // if ((CPU::memory[LCDC] & 0x20) == 0x20)
+            // {
+            //     if ((CPU::memory[LCDC] & 0x01) == 0x01)
+            //     {
+            //         tile_to_fetch = CPU::memory[window_map_offset + window_tile_coarse_offsety * 32 + window_tile_coarse_offsetx];
+            //         // We now have the tile and the row to be rendered lets calculate the bytes we have to fetch 2 bytes for one row
+
+            //         std::vector<std::vector<u8>> tile_data = window_grid[tile_to_fetch];
+            //         u8 palette = CPU::memory[BGP];
+            //         u32 pixel_color_num = tile_data[window_tile_fine_offsety][window_tile_fine_offsetx];
+
+            //         switch (pixel_color_num)
+            //         {
+            //         case 0:
+            //             pixel_color_num = colors[palette & 0x03];
+            //             break;
+            //         case 1:
+            //             pixel_color_num = colors[(palette & 0x0C) >> 2];
+            //             break;
+            //         case 2:
+            //             pixel_color_num = colors[(palette & 0x30) >> 4];
+            //             break;
+            //         case 3:
+            //             pixel_color_num = colors[(palette & 0xC0) >> 6];
+            //             break;
+            //         }
+            //         screen_pixels[scanline][i] = pixel_color_num;
+            //     }
+            // }
+
+            if ((CPU::memory[LCDC] & 0x02) == 0x02)
+            {
+                u32 sprite_pixel_color_num = 0;
+                // if((CPU::memory[LCDC] & 0x04) == 0x04)
+                // {
+                //     printf("Sprite size: 8x16\n");
+                // }
+                // else printf("Sprite size: 8x8\n");
+                // render sprites
+                for (auto it : sprites_to_render)
+                {
+                    if ((it.sprite_x - 8 >= i - 7) && (it.sprite_x - 8 + 8 <= i + 7))
+                    {
+                        // sprite_tile_to_fetch = CPU::memory[0x8000 + it.sprite_index];
+                        // std::vector<std::vector<u8>> sprite_tile_data = sprite_grid[sprite_tile_to_fetch];
+                        std::vector<std::vector<u8>> sprite_tile_data = sprite_grid[it.sprite_index];
+                        u8 sprite_palette = 0;
+                        if ((it.sprite_attr & 0x10) == 0x10)
+                        {
+                            sprite_palette = CPU::memory[OBP1];
+                        }
+                        else
+                        {
+                            sprite_palette = CPU::memory[OBP0];
+                        }
+                        sprite_tile_fine_offsety = normalize(scanline) % 8;
+                        if ((it.sprite_attr & 0x40) == 0x40)
+                        {
+                            // Y flip
+                            sprite_tile_fine_offsety = std::abs(8 - sprite_tile_fine_offsety);
+                        }
+                        sprite_tile_fine_offsetx = normalize(i) % 8;
+                        if ((it.sprite_attr & 0x20) == 0x20)
+                        {
+                            // X flip
+                            sprite_tile_fine_offsetx = std::abs(8 - sprite_tile_fine_offsetx);
+                        }
+                        sprite_pixel_color_num = sprite_tile_data[sprite_tile_fine_offsety][sprite_tile_fine_offsetx];
+                        switch (sprite_pixel_color_num)
+                        {
+                        case 1:
+                            sprite_pixel_color_num = colors[(sprite_palette & 0x0C) >> 2];
+                            break;
+                        case 2:
+                            sprite_pixel_color_num = colors[(sprite_palette & 0x30) >> 4];
+                            break;
+                        case 3:
+                            sprite_pixel_color_num = colors[(sprite_palette & 0xC0) >> 6];
+                            break;
+                        }
+                        if ((it.sprite_attr & 0x80) != 0x80)
+                            screen_pixels[scanline][i] = sprite_pixel_color_num;
+                    }
+                }
+            }
+        }
+        sprites_to_render.clear();
+        sprites_this_scanline = 0;
+        //}
     }
 
     void renderBGTiles()
@@ -606,5 +627,18 @@ namespace PPU
                 GUI::off_screen_buffer[i * 160 + j] = screen_pixels[i][j];
             }
         }
+    }
+
+    void build_tile_grids()
+    {
+        if ((CPU::memory[LCDC] & 0x10) == 0x10)
+            bg_tile_display_offset = 0x8000;
+        else
+            bg_tile_display_offset = 0x8800;
+        bg_tile_display_offset = 0x8000;
+        printf("Tile Offset: %x\n", bg_tile_display_offset);
+        grid = build_chrgrid(bg_tile_display_offset);
+        window_grid = build_chrgrid(bg_tile_display_offset);
+        sprite_grid = build_chrgrid(0x8000);
     }
 } // namespace PPU

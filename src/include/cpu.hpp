@@ -11,6 +11,7 @@
 #define TMA 0xFF06
 #define TAC 0xFF07
 #define DMA 0xFF46
+#define JOYP 0xFF00
 
 namespace CPU
 {

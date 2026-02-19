@@ -17,6 +17,7 @@ namespace PPU
     extern u8 mode;
     extern int scanline;
     extern int main_cycles;
+    extern u16 cycle;
     std::vector<std::vector<std::vector<u8> >> build_chrgrid(u16);
     void build_chrgrid_half(u16, std::vector<std::vector<std::vector<u8> >>&);
     void tick();
@@ -25,4 +26,5 @@ namespace PPU
     void render_offscreen_buffer();
     void renderBGTiles();
     void render_sprite_tiles();
+    void build_tile_grids();
 } // namespace PPU
