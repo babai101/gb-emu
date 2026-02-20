@@ -27,4 +27,6 @@ namespace PPU
     void renderBGTiles();
     void render_sprite_tiles();
     void build_tile_grids();
+    void render_background();
+    void render_sprite();
 } // namespace PPU

@@ -49,7 +49,7 @@ namespace GUI
             }
 
             // Create window
-            gWindow = SDL_CreateWindow("SDL Tutorial", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+            gWindow = SDL_CreateWindow("GameBoy Emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
             if (gWindow == NULL)
             {
                 printf("Window could not be created! SDL Error: %s\n", SDL_GetError());
@@ -194,8 +194,8 @@ namespace GUI
     void render()
     {
         // Clear screen
-        SDL_RenderClear(gRenderer);
-        SDL_RenderClear(ppuViewereRenderer);
+        //SDL_RenderClear(gRenderer);
+        //SDL_RenderClear(ppuViewereRenderer);
 
         // Render texture to screen
         SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
