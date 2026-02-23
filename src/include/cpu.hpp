@@ -17,6 +17,9 @@ namespace CPU
 {
     extern u8 memory[];
     extern std::string gb_type;
+    extern int T_CYCLES_PER_FRAME;
+    extern bool isr_served;
+    extern bool cpu_halted;
     u8 read_memory(u16);
     enum flags
     {
@@ -33,4 +36,6 @@ namespace CPU
     void seed();
     bool check_flag(enum flags);
     void serve_isr(u16);
+    void check_interrupts();
+    void run_timers(int);
 } // namespace CPU

@@ -65,7 +65,7 @@ namespace PPU
                 mode = 2;
 
                 // scanning of OAM starts kickoff mode 2
-                u8 temp = CPU::memory[STAT] & 0xFC;
+                u8 temp = (CPU::memory[STAT] & 0xFC);
                 temp |= 0x02;
                 CPU::memory[STAT] = temp;
                 // STAT interrupt
@@ -81,7 +81,7 @@ namespace PPU
             if (cycle == 80)
             {
                 // scanning of OAM done, kickoff mode 3
-                u8 temp = CPU::memory[STAT] & 0xFC;
+                u8 temp = (CPU::memory[STAT] & 0xFC);
                 temp |= 0x03;
                 CPU::memory[STAT] = temp;
                 mode = 3;
@@ -89,7 +89,7 @@ namespace PPU
             if (cycle == (80 + 172))
             {
                 // rendering pixels done kickoff mode 0 (hblank)
-                CPU::memory[STAT] = CPU::memory[STAT] & 0xFC;
+                CPU::memory[STAT] = (CPU::memory[STAT] & 0xFC);
                 // STAT interrupt
                 if ((CPU::memory[STAT] & 0x08) == 0x08)
                 {
@@ -97,7 +97,7 @@ namespace PPU
                     intrpt &= 0xFD;
                     intrpt |= 0x02;
                     CPU::memory[IF] = intrpt;
-                    // printf("STAT Interrupt, Mode 0 (HBLANK) starts..scanline: %d\n", scanline);
+                    //printf("STAT Interrupt, Mode 0 (HBLANK) starts..scanline: %d\n", scanline);
                 }
                 mode = 0;
             }
@@ -109,7 +109,7 @@ namespace PPU
                 {
                     // Start of MODE 1
                     u8 intrpt = CPU::memory[IF];
-                    u8 temp = CPU::memory[STAT] & 0xFC;
+                    u8 temp = (CPU::memory[STAT] & 0xFC);
                     temp |= 0x01;
                     CPU::memory[STAT] = temp;
                     // printf("STAT Set at VBLANK: %x\n", CPU::memory[STAT]);
@@ -223,6 +223,11 @@ namespace PPU
             else
                 bg_map_offset = 0x9800;
 
+            // DEBUG
+            // printf("Tile# at first bg map: %x\n", CPU::memory[bg_map_offset]);
+            // printf("LCDC Value: %x\n", CPU::memory[LCDC]);
+            // DEBUG
+
             tile_fine_offsetx = i % 8;
             tile_fine_offsety = scanline % 8;
             tile_coarse_offsetx = i / 8;
@@ -330,28 +335,29 @@ namespace PPU
         // u8 sprite_tile_fine_offsety = 0;
 
         u8 sprites_this_scanline = 0;
-        // search through OAM 40x4 bytes
-        for (int o = 0; o < 160; o += 4)
-        {
-            // check if sprite Y falls in current scanline
-            u8 sprite_y = CPU::memory[0xFE00 + o] - 16;
-            u8 sprite_x = CPU::memory[0xFE00 + o + 1];
-            u8 sprite_index = CPU::memory[0xFE00 + o + 2];
-            u8 sprite_attr = CPU::memory[0xFE00 + o + 3];
-            // 8x8 sprites
-            if ((sprite_y <= scanline) && (sprite_y >= scanline - 8))
-            {
-                // printf("scanline: %i, sprite Y: %i, sprite X: %i\n", scanline, sprite_y, sprite_x);
-                sprites_to_render.push_back(sprite{sprite_y, sprite_x, sprite_index, sprite_attr});
-                sprites_this_scanline++;
-                if (sprites_this_scanline >= 10)
-                {
-                    sprites_this_scanline = 0;
-                    break;
-                }
-            }
-        }
-        render_background();
+        // // search through OAM 40x4 bytes
+        // for (int o = 0; o < 160; o += 4)
+        // {
+        //     // check if sprite Y falls in current scanline
+        //     u8 sprite_y = CPU::memory[0xFE00 + o] - 16;
+        //     u8 sprite_x = CPU::memory[0xFE00 + o + 1];
+        //     u8 sprite_index = CPU::memory[0xFE00 + o + 2];
+        //     u8 sprite_attr = CPU::memory[0xFE00 + o + 3];
+        //     // 8x8 sprites
+        //     if ((sprite_y <= scanline) && (sprite_y >= scanline - 8))
+        //     {
+        //         // printf("scanline: %i, sprite Y: %i, sprite X: %i\n", scanline, sprite_y, sprite_x);
+        //         sprites_to_render.push_back(sprite{sprite_y, sprite_x, sprite_index, sprite_attr});
+        //         sprites_this_scanline++;
+        //         if (sprites_this_scanline >= 10)
+        //         {
+        //             sprites_this_scanline = 0;
+        //             break;
+        //         }
+        //     }
+        // }
+        if (CPU::memory[LCDC] & 0x01)
+            render_background();
 
         // render window
         // if ((CPU::memory[LCDC] & 0x20) == 0x20)
@@ -601,7 +607,7 @@ namespace PPU
         {
             for (int j = 0; j < 160; j++)
             {
-                GUI::off_screen_buffer[i * 160 + j] = screen_pixels[i][j];
+                GUI::off_screen_buffer[i * 160 + j] = screen_pixels[i][j];                
             }
         }
     }

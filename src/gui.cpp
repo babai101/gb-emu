@@ -194,8 +194,8 @@ namespace GUI
     void render()
     {
         // Clear screen
-        //SDL_RenderClear(gRenderer);
-        //SDL_RenderClear(ppuViewereRenderer);
+        // SDL_RenderClear(gRenderer);
+        // SDL_RenderClear(ppuViewereRenderer);
 
         // Render texture to screen
         SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
@@ -212,6 +212,11 @@ namespace GUI
     {
         // Main loop flag
         bool quit = false;
+
+        bool frame_complete = false;
+        // int frames_ticked = 0;
+        int cycles_this_frame = 0;
+        int cycles_ran = 0;
 
         // Event handler
         SDL_Event e;
@@ -280,7 +285,73 @@ namespace GUI
                 }
             }
             // std::cout << "Running CPU" << std::endl;
-            CPU::run();
+            frame_complete = false;
+            while (!frame_complete)
+            {
+                if (!CPU::cpu_halted)
+                {
+                    cycles_ran = CPU::run() * 4;
+                    CPU::run_timers(cycles_ran / 4);
+                    if ((CPU::memory[LCDC] & 0x80) == 0x80)
+                    {
+                        for (int i = 0; i < cycles_ran; i++)
+                        {
+                            PPU::tick();
+                        }
+                    }
+                    cycles_this_frame += cycles_ran;
+                    CPU::check_interrupts();
+                    if (CPU::isr_served)
+                    {
+                        if ((CPU::memory[LCDC] & 0x80) == 0x80)
+                        {
+                            for (int i = 0; i < 5 * 4; i++)
+                            {
+                                PPU::tick();
+                            }
+                        }
+                        CPU::isr_served = false;
+                        cycles_this_frame += (5 * 4);
+                    }
+                }
+                else
+                {
+                    int temp = 0; 
+                    while (CPU::cpu_halted && (cycles_this_frame < CPU::T_CYCLES_PER_FRAME))
+                    {                                           
+                        PPU::tick();
+                        if (temp == 3)
+                        {
+                            CPU::run_timers(1);
+                            temp = 0;
+                        }
+                        cycles_this_frame++;
+                        CPU::check_interrupts();
+                        if (CPU::isr_served)
+                        {
+                            if ((CPU::memory[LCDC] & 0x80) == 0x80)
+                            {
+                                for (int i = 0; i < 5 * 4; i++)
+                                {
+                                    PPU::tick();
+                                }
+                            }
+                            CPU::isr_served = false;
+                            cycles_this_frame += (5 * 4);
+                        }  
+                        temp++;                      
+                    }
+                }
+
+                if (cycles_this_frame >= CPU::T_CYCLES_PER_FRAME)
+                {
+                    cycles_this_frame -= CPU::T_CYCLES_PER_FRAME;
+                    frame_complete = true;
+                }
+                cycles_ran = 0;
+            }
+
+            // CPU::run();
             frameCount++;
 
             // printf("Frame Count: %d\n", frameCount);

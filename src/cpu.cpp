@@ -26,11 +26,14 @@ namespace CPU
     int cycles = 0;
     int cycles_this_frame = 0;
     int div_cycles = 0;
-    int div_clock = 256;
+    int div_clock = 64;
     int tima_cycles = 0;
-    int tima_clock = 1024;
+    int tima_clock = 256;
     const int CYCLES_PER_FRAME = 70224 / 4;
+    int T_CYCLES_PER_FRAME = 70224;
     bool error_occurred = false;
+    bool cpu_halted = false;
+
     void reset()
     {
         for (std::size_t i = 0; i < 65536; i++)
@@ -40,7 +43,7 @@ namespace CPU
     void seed()
     {
         PC = 0x100;
-        A = 0x00;
+        A = 0x01;
 
         if (gb_type == "DMG")
         {
@@ -89,7 +92,7 @@ namespace CPU
         memory[0xFF24] = 0x77; // NR50
         memory[0xFF25] = 0xF3; // NR51
         memory[0xFF26] = 0xF1; // NR52
-        // memory[0xFF40] = 0x91; // LCDC
+        memory[0xFF40] = 0x00; // LCDC
         memory[0xFF41] = 0x85; // STAT
         if (gb_type == "DMG")
         {
@@ -99,7 +102,6 @@ namespace CPU
         {
             // memory[0xFF26] = 0xF0; // NR52
         }
-        // memory[0xFF40] = 0x91; // LCDC
         memory[0xFF42] = 0x00; // SCY
         memory[0xFF43] = 0x00; // SCX
         memory[0xFF44] = 144;  // LY
@@ -139,11 +141,11 @@ namespace CPU
             printf("Reading LCD STAT...\n");
             if ((memory[LCDC] & 0x80) == 0)
             {
-                return memory[STAT] & 0xFE;
+                return memory[STAT] & 0xFC;
             }
             break;
         case LY:
-            printf("Checking for LY, current value: %d\n", memory[LY]);
+            // printf("Checking for LY, current value: %d\n", memory[LY]);
             break;
         }
         if (addr >= 0xFE00 && addr <= 0xFE9F)
@@ -194,12 +196,22 @@ namespace CPU
             memory[DIV] = 0;
             break;
         case LCDC:
-            if (val == 0xD3)
-            {
-                printf("Writing %x to LCDC at scanline: %d cycle: %d PC: %x IME: %d STAT: %x\n", val, PPU::scanline, PPU::cycle, PC - 1, IME, memory[STAT]);
-            }
+            // if (val == 0xD3)
+            // {
+            //     printf("Writing %x to LCDC at scanline: %d cycle: %d PC: %x IME: %d STAT: %x\n", val, PPU::scanline, PPU::cycle, PC - 1, IME, memory[STAT]);
+            // }
             if ((val & 0x80) == 0 && PPU::mode != 1)
                 return;
+            else
+            {
+                PPU::scanline = 0;
+                PPU::mode = 2;
+                // PPU::cycle = 0;
+                memory[LY] = 0;
+                u8 temp = memory[STAT] & 0xFC;
+                temp |= 0x02;
+                memory[STAT] = temp;
+            }
             // RESET GAMEBOY when PPU is disabled
             //  if ((val & 0x80) == 0)
             //  {
@@ -225,6 +237,15 @@ namespace CPU
             memory[JOYP] &= 0x0F;
             memory[JOYP] |= (val & 0xF0);
             return;
+        case IE:
+            // DEBUG
+            // printf("Writing to IE, value: %x\n", val);
+            // if (val & 0x02)
+            //     printf("Enabling STAT Interrupt, Cycle: %d, Scanline %d\n", PPU::cycle, PPU::scanline);
+            // else
+            //     printf("Disabling STAT Interrupt, Cycle: %d, Scanline %d\n", PPU::cycle, PPU::scanline);
+            // DEBUG
+            break;
         case DMA:
             u16 dma_source = (val / 0x100) << 8;
             for (int i = 0; i < 160; i++)
@@ -233,13 +254,13 @@ namespace CPU
             }
             dma_transferred = true;
             printf("DMA transfer complete\n");
-            return;            
+            return;
         }
         if (addr >= 0xFE00 && addr <= 0xFE9F)
         {
-            printf("Manually writing to OAM\n");
-            // if ((addr == 0xFE00) && (val > 16))
-            //     printf("oam writing..\n");
+            // printf("Manually writing to OAM\n");
+            //  if ((addr == 0xFE00) && (val > 16))
+            //      printf("oam writing..\n");
             if (PPU::mode > 1) // && ((memory[LCDC] & 0x80) == 0x80))
                 return;
             // printf("OAM written, Addr: %u Val: %u\n", addr, val);
@@ -248,8 +269,8 @@ namespace CPU
         {
             if (PPU::mode == 3 && ((memory[LCDC] & 0x80) == 0x80))
             {
-                // printf("Writing to VRAM in MODE 3 STAT: %x LY: %d PPU Scanline: %d PPU Cycle: %d\n", memory[STAT], memory[LY], PPU::scanline, PPU::cycle);
-                //  return;
+                printf("Writing to VRAM in MODE 3 STAT: %x LY: %d PPU Scanline: %d PPU Cycle: %d\n", memory[STAT], memory[LY], PPU::scanline, PPU::cycle);
+                // return;
             }
         }
         if (addr >= 0xFEA0 && addr <= 0xFEFF)
@@ -1583,7 +1604,14 @@ namespace CPU
     }
     void halt()
     {
-        // TODO
+        // TODO Implement HALT BUG
+
+        if ((read_memory(IF) & read_memory(IE)) && !IME)
+        {
+            return;
+        }
+        cpu_halted = true;
+        printf("CPU Halted.\n");
     }
     void stop()
     {
@@ -2180,150 +2208,71 @@ namespace CPU
         // std::ofstream myfile("log.txt", std::ofstream::app);
         // if (myfile.is_open())
         // {
-        while (true)
+        // while (true)
+        // {
+        fetch_opcode();
+        // debug
+        //  myfile << "PC: " << std::hex << int(PC - 1)
+        //         << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
+
+        // //debug
+        // std::cout << "PC: " << std::hex << int(PC - 1)
+        //           << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
+        decode_opcode();
+
+        // if (error_occurred)
+        //     break;
+        if (dma_transferred)
         {
-            fetch_opcode();
-            // debug
-            //  myfile << "PC: " << std::hex << int(PC - 1)
-            //         << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
-
-            // //debug
-            // std::cout << "PC: " << std::hex << int(PC - 1)
-            //           << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
-            decode_opcode();
-            if (error_occurred)
-                break;
-            if (dma_transferred)
-            {
-                cycles += 160;
-                dma_transferred = false;
-            }
-
-            // Timers
-            div_cycles += cycles;
-            tima_cycles += cycles;
-            if (div_cycles >= div_clock)
-            {
-                div_cycles -= div_clock;
-                // Tick DIV
-                if (memory[DIV] == 0xFF)
-                {
-                    memory[DIV] = 0;
-                }
-                else
-                {
-                    memory[DIV]++;
-                }
-            }
-            if (tima_cycles >= tima_clock)
-            {
-                tima_cycles -= tima_clock;
-
-                // check if TIMA counting is enabled
-                if ((memory[TAC] & 0x04) == 0x04)
-                {
-                    // Tick TIMA
-                    if (memory[TIMA] == 0xFF)
-                    {
-                        // TIMA overflow
-                        memory[TIMA] = memory[TMA];
-                        // request interrupt
-                        u8 intrpt = CPU::read_memory(IF);
-                        intrpt &= 0xFB;
-                        intrpt |= 0x04;
-                        CPU::write_memory(IF, intrpt);
-                    }
-                    else
-                        memory[TIMA]++;
-                }
-            }
-
-            // if ((memory[LCDC] & 0x80) == 0x80)
-            // {
-            for (int i = 0; i < cycles * 4; i++)
-            {
-                PPU::tick();
-            }
-            // }
-            cycles_this_frame += cycles;
-
-            // check for IRQs
-            if (read_memory(IF) > 0) // an interrupt is there
-            {
-                if (IME)
-                {
-                    if ((read_memory(IF) & 0x01) == 0x01)
-                    {
-                        // VBlank
-                        // disable interrupt
-                        // DEBUG
-                        // memory[IF] = memory[IF] & 0xFE;
-                        // IME = false;
-                        // serve_isr(VSYNCVEC);
-                        // DEBUG
-                        if ((read_memory(IE) & 0x01) == 0x01)
-                        {
-                            memory[IF] = memory[IF] & 0xFE;
-                            IME = false;
-                            // printf("Acknowleding VBLANK Interrupt...\n");
-                            serve_isr(VSYNCVEC);
-                        }
-                    }
-                    else if ((memory[IF] & 0x02) == 0x02)
-                    {
-                        // LCDSTAT
-                        // disable interrupt
-                        if ((memory[IE] & 0x02) == 0x02)
-                        {
-                            memory[IF] = memory[IF] & 0xFD;
-                            IME = false;
-                            // printf("Acknowleding STAT Interrupt...\n");
-                            serve_isr(LCDSTAT);
-                        }
-                    }
-                    else if ((memory[IF] & 0x04) == 0x04)
-                    {
-                        if ((memory[IE] & 0x04) == 0x04)
-                        {
-                            // TIMER
-                            // disable interrupt
-                            memory[IF] = memory[IF] & 0xFB;
-                            IME = false;
-                            // printf("Acknowleding TIMER Interrupt...\n");
-                            serve_isr(TIMER);
-                        }
-                    }
-                }
-            }
-            if (isr_served)
-            {
-                // if ((memory[LCDC] & 0x80) == 0x80)
-                // {
-                for (int i = 0; i < cycles * 4; i++)
-                {
-                    PPU::tick();
-                }
-                // }
-                cycles_this_frame += cycles;
-                isr_served = false;
-            }
-            // cycles_this_frame += cycles;
-            if (cycles_this_frame >= CYCLES_PER_FRAME)
-            {
-
-                //  printf("CPU Cycles ran this frame: %d\n", cycles_this_frame);
-                //  printf("PPU Cycles ran this frame: %d\n", PPU::main_cycles);
-                cycles_this_frame -= CYCLES_PER_FRAME;
-                break;
-            }
+            cycles += 160;
+            dma_transferred = false;
         }
+
+        // run_timers();
+
+        // if ((memory[LCDC] & 0x80) == 0x80)
+        // {
+        //     for (int i = 0; i < cycles * 4; i++)
+        //     {
+        //         PPU::tick();
+        //     }
+        // }
+        // cycles_this_frame += cycles;
+
+        // check_interrupts();
+
+        // if (isr_served)
+        // {
+        //     // if ((memory[LCDC] & 0x80) == 0x80)
+        //     // {
+        //     if ((memory[LCDC] & 0x80) == 0x80)
+        //     {
+        //         for (int i = 0; i < cycles * 4; i++)
+        //         {
+        //             PPU::tick();
+        //         }
+        //     }
+        //     // }
+        //     cycles_this_frame += cycles;
+        //     isr_served = false;
+        // }
+        // cycles_this_frame += cycles;
+        // if (cycles_this_frame >= CYCLES_PER_FRAME)
+        // {
+
+        //     //  printf("CPU Cycles ran this frame: %d\n", cycles_this_frame);
+        //     //  printf("PPU Cycles ran this frame: %d\n", PPU::main_cycles);
+        //     cycles_this_frame -= CYCLES_PER_FRAME;
+        //     break;
+        // }
+        //}
         //     myfile.close();
         // }
         // std::cout << "Ran a frame" << std::endl;
         // DEBUG STARTS
         // printf("JOYPAD LOWER NIBBLE: %x\n", memory[JOYP]);
         // DEBUG ENDS
-        return 0;
+        return cycles;
     }
 
     void serve_isr(u16 vector)
@@ -2333,5 +2282,116 @@ namespace CPU
         PC = vector;
         cycles = 5;
         isr_served = true;
+        // if (cpu_halted)
+        //     cpu_halted = false;
+    }
+
+    void run_timers(int cycles_to_run)
+    {
+        // Timers
+        div_cycles += cycles_to_run;
+        tima_cycles += cycles_to_run;
+        if (div_cycles >= div_clock)
+        {
+            div_cycles -= div_clock;
+            // Tick DIV
+            if (memory[DIV] == 0xFF)
+            {
+                memory[DIV] = 0;
+            }
+            else
+            {
+                memory[DIV]++;
+            }
+        }
+        if (tima_cycles >= tima_clock)
+        {
+            tima_cycles -= tima_clock;
+
+            // check if TIMA counting is enabled
+            if ((memory[TAC] & 0x04) == 0x04)
+            {
+                // Tick TIMA
+                if (memory[TIMA] == 0xFF)
+                {
+                    // TIMA overflow
+                    memory[TIMA] = memory[TMA];
+                    // request interrupt
+                    u8 intrpt = CPU::read_memory(IF);
+                    intrpt &= 0xFB;
+                    intrpt |= 0x04;
+                    CPU::write_memory(IF, intrpt);
+                }
+                else
+                    memory[TIMA]++;
+            }
+        }
+    }
+
+    void check_interrupts()
+    {
+        // check for IRQs
+        if (read_memory(IF) & read_memory(IE)) // an interrupt is there
+        {
+            // get out of HALT
+            if (cpu_halted)
+            {
+                cpu_halted = false;
+                printf("Out of Halt.. IF: %x IE: %x \n", read_memory(IF), read_memory(IE));
+            }
+            if (IME)
+            {
+                if ((read_memory(IF) & 0x01) == 0x01)
+                {
+                    // VBlank
+                    // disable interrupt
+                    // DEBUG
+                    // memory[IF] = memory[IF] & 0xFE;
+                    // IME = false;
+                    // serve_isr(VSYNCVEC);
+                    // DEBUG
+                    if ((read_memory(IE) & 0x01) == 0x01)
+                    {
+                        memory[IF] = memory[IF] & 0xFE;
+                        IME = false;
+                        printf("Acknowleding VBLANK Interrupt...\n");
+                        serve_isr(VSYNCVEC);
+                    }
+                }
+            }
+            if (IME)
+            {
+                if ((memory[IF] & 0x02) == 0x02)
+                {
+                    // LCDSTAT
+                    // DEBUG
+                    // printf("STAT Interrupt is waiting, IME: %d IE: %x Scanline: %d PPU Cycle: %d\n", IME, memory[IE], PPU::scanline, PPU::cycle);
+                    // DEBUG
+                    // disable interrupt
+                    if ((memory[IE] & 0x02) == 0x02)
+                    {
+                        memory[IF] = memory[IF] & 0xFD;
+                        IME = false;
+                        printf("Acknowleding STAT Interrupt...\n");
+                        serve_isr(LCDSTAT);
+                    }
+                }
+            }
+            if (IME)
+            {
+                if ((memory[IF] & 0x04) == 0x04)
+                {
+                    if ((memory[IE] & 0x04) == 0x04)
+                    {
+                        // TIMER
+                        // disable interrupt
+                        memory[IF] = memory[IF] & 0xFB;
+                        IME = false;
+                        printf("Acknowleding TIMER Interrupt...\n");
+                        serve_isr(TIMER);
+                    }
+                }
+            }
+        }
     }
 } // namespace CPU
