@@ -83,35 +83,35 @@ namespace GUI
                 }
 
                 // Create debug windows
-                ppuViewer = SDL_CreateWindow("PPU viewer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256, 256, SDL_WINDOW_SHOWN);
-                if (ppuViewer == NULL)
-                {
-                    printf("PPU Viewer Window could not be created! SDL Error: %s\n", SDL_GetError());
-                    success = false;
-                }
-                else
-                {
-                    SDL_SetWindowResizable(ppuViewer, SDL_TRUE);
-                    ppuViewereRenderer = SDL_CreateRenderer(ppuViewer, -1, SDL_RENDERER_ACCELERATED);
-                    if (ppuViewereRenderer == NULL)
-                    {
-                        printf("PPU Viewer Renderer could not be created! SDL Error: %s\n", SDL_GetError());
-                        success = false;
-                    }
+                // ppuViewer = SDL_CreateWindow("PPU viewer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256, 256, SDL_WINDOW_SHOWN);
+                // if (ppuViewer == NULL)
+                // {
+                //     printf("PPU Viewer Window could not be created! SDL Error: %s\n", SDL_GetError());
+                //     success = false;
+                // }
+                // else
+                // {
+                //     SDL_SetWindowResizable(ppuViewer, SDL_TRUE);
+                //     ppuViewereRenderer = SDL_CreateRenderer(ppuViewer, -1, SDL_RENDERER_ACCELERATED);
+                //     if (ppuViewereRenderer == NULL)
+                //     {
+                //         printf("PPU Viewer Renderer could not be created! SDL Error: %s\n", SDL_GetError());
+                //         success = false;
+                //     }
 
-                    ppuViewerTexture = SDL_CreateTexture(ppuViewereRenderer,
-                                                         SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                                         256, 256);
-                    if (ppuViewerTexture == NULL)
-                    {
-                        printf("PPU Viewer Textures could not be created! SDL Error: %s\n", SDL_GetError());
-                        success = false;
-                    }
-                    if (success)
-                    {
-                        SDL_SetWindowSize(ppuViewer, 512, 512);
-                    }
-                }
+                //     ppuViewerTexture = SDL_CreateTexture(ppuViewereRenderer,
+                //                                          SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                //                                          256, 256);
+                //     if (ppuViewerTexture == NULL)
+                //     {
+                //         printf("PPU Viewer Textures could not be created! SDL Error: %s\n", SDL_GetError());
+                //         success = false;
+                //     }
+                //     if (success)
+                //     {
+                //         SDL_SetWindowSize(ppuViewer, 512, 512);
+                //     }
+                // }
                 // spriteViewer = SDL_CreateWindow("Sprite viewer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 256, 256, SDL_WINDOW_SHOWN);
                 // if (ppuViewer == NULL)
                 // {
@@ -151,6 +151,7 @@ namespace GUI
             }
             return success;
         }
+        return success;
     }
     // void run() { CPU::run(); }
 
@@ -160,13 +161,13 @@ namespace GUI
         SDL_DestroyTexture(gTexture);
         gTexture = NULL;
 
-        SDL_DestroyTexture(ppuViewerTexture);
+        //SDL_DestroyTexture(ppuViewerTexture);
         ppuViewerTexture = NULL;
         // Destroy window
         SDL_DestroyRenderer(gRenderer);
-        SDL_DestroyRenderer(ppuViewereRenderer);
+        //SDL_DestroyRenderer(ppuViewereRenderer);
         SDL_DestroyWindow(gWindow);
-        SDL_DestroyWindow(ppuViewer);
+        //SDL_DestroyWindow(ppuViewer);
         gWindow = NULL;
         ppuViewer = NULL;
         gRenderer = NULL;
@@ -181,10 +182,10 @@ namespace GUI
         SDL_UpdateTexture(gTexture, NULL, pixels, SCREEN_WIDTH * sizeof(unsigned int));
     }
 
-    void update_ppuViewerTexture(u32 *pixels)
-    {
-        SDL_UpdateTexture(ppuViewerTexture, NULL, pixels, 256 * sizeof(unsigned int));
-    }
+    // void update_ppuViewerTexture(u32 *pixels)
+    // {
+    //     SDL_UpdateTexture(ppuViewerTexture, NULL, pixels, 256 * sizeof(unsigned int));
+    // }
 
     // void update_spriteViewerTexture(u32 *pixels)
     // {
@@ -194,17 +195,17 @@ namespace GUI
     void render()
     {
         // Clear screen
-        // SDL_RenderClear(gRenderer);
+        SDL_RenderClear(gRenderer);
         // SDL_RenderClear(ppuViewereRenderer);
 
         // Render texture to screen
         SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
-        SDL_RenderCopy(ppuViewereRenderer, ppuViewerTexture, NULL, NULL);
+        // SDL_RenderCopy(ppuViewereRenderer, ppuViewerTexture, NULL, NULL);
         // SDL_RenderCopy(spriteViewereRenderer, spriteViewerTexture, NULL, NULL);
 
         // Update screen
         SDL_RenderPresent(gRenderer);
-        SDL_RenderPresent(ppuViewereRenderer);
+        // SDL_RenderPresent(ppuViewereRenderer);
         // SDL_RenderPresent(spriteViewereRenderer);
     }
 
@@ -234,8 +235,9 @@ namespace GUI
                 timeStart = SDL_GetTicks();
             frameStart = SDL_GetTicks();
 
-            CPU::memory[JOYP] &= 0xF0;
-            CPU::memory[JOYP] |= 0x0F;
+            // CPU::memory[JOYP] &= 0xF0;
+            // CPU::memory[JOYP] |= 0x0F;
+            CPU::memory[JOYP] = 0xCF;
 
             // Handle events on queue
             while (SDL_PollEvent(&e) != 0)
@@ -303,7 +305,7 @@ namespace GUI
                     CPU::check_interrupts();
                     if (CPU::isr_served)
                     {
-                        if ((CPU::memory[LCDC] & 0x80) == 0x80)
+                        if (CPU::memory[LCDC] & 0x80)
                         {
                             for (int i = 0; i < 5 * 4; i++)
                             {
@@ -316,10 +318,11 @@ namespace GUI
                 }
                 else
                 {
-                    int temp = 0; 
+                    int temp = 0;
                     while (CPU::cpu_halted && (cycles_this_frame < CPU::T_CYCLES_PER_FRAME))
-                    {                                           
-                        PPU::tick();
+                    {
+                        if (CPU::memory[LCDC] & 0x80)
+                            PPU::tick();
                         if (temp == 3)
                         {
                             CPU::run_timers(1);
@@ -338,8 +341,8 @@ namespace GUI
                             }
                             CPU::isr_served = false;
                             cycles_this_frame += (5 * 4);
-                        }  
-                        temp++;                      
+                        }
+                        temp++;
                     }
                 }
 
@@ -371,8 +374,8 @@ namespace GUI
             if (frameTime < DELAY)
                 SDL_Delay((float)(DELAY - frameTime));
             update_texture(off_screen_buffer);
-            PPU::renderBGTiles();
-            update_ppuViewerTexture(bgTiles_screen_buffer);
+            //PPU::renderBGTiles();
+            //update_ppuViewerTexture(bgTiles_screen_buffer);
             // PPU::render_sprite_tiles();
             // update_spriteViewerTexture(spriteTiles_screen_buffer);
         }

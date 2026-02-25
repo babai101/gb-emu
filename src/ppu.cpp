@@ -34,6 +34,8 @@ namespace PPU
     {
         // DEBUG
         prev_stat = CPU::memory[STAT];
+        // if (CPU::memory[JOYP] != 0xCF)
+        //     printf("JOYP state changed: %x\n", CPU::memory[JOYP]);
         // DEBUG
         CPU::memory[LY] = scanline;
         if (cycle == 0)

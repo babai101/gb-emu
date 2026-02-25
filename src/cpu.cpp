@@ -92,7 +92,7 @@ namespace CPU
         memory[0xFF24] = 0x77; // NR50
         memory[0xFF25] = 0xF3; // NR51
         memory[0xFF26] = 0xF1; // NR52
-        memory[0xFF40] = 0x00; // LCDC
+        memory[0xFF40] = 0x91; // LCDC
         memory[0xFF41] = 0x85; // STAT
         if (gb_type == "DMG")
         {
@@ -145,7 +145,7 @@ namespace CPU
             }
             break;
         case LY:
-            // printf("Checking for LY, current value: %d\n", memory[LY]);
+            // printf("Checking for LY: %d scanline: %d cycle: %d\n", memory[LY], PPU::scanline, PPU::cycle);
             break;
         }
         if (addr >= 0xFE00 && addr <= 0xFE9F)
@@ -160,7 +160,6 @@ namespace CPU
         {
             if (PPU::mode == 3) // && ((memory[LCDC] & 0x80) == 0x80))
             {
-                // printf("Writing to VRAM during VBLANK is not allowed\n");
                 return 0xFF;
             }
         }
@@ -196,13 +195,15 @@ namespace CPU
             memory[DIV] = 0;
             break;
         case LCDC:
-            // if (val == 0xD3)
-            // {
-            //     printf("Writing %x to LCDC at scanline: %d cycle: %d PC: %x IME: %d STAT: %x\n", val, PPU::scanline, PPU::cycle, PC - 1, IME, memory[STAT]);
-            // }
-            if ((val & 0x80) == 0 && PPU::mode != 1)
+
+            printf("Writing %x to LCDC at scanline: %d cycle: %d PC: %x IME: %d STAT: %x\n", val, PPU::scanline, PPU::cycle, PC - 1, IME, memory[STAT]);
+
+            if ((memory[LCDC] & 0x80) && (val & 0x80) == 0 && PPU::mode != 1)
+            {
+                printf("Trying to turn off LCD during rendering\n");
                 return;
-            else
+            }
+            else if ((memory[LCDC] & 0x80) && (val & 0x80) == 0)
             {
                 PPU::scanline = 0;
                 PPU::mode = 2;
@@ -253,7 +254,7 @@ namespace CPU
                 memory[0xFE00 + i] = memory[dma_source + i];
             }
             dma_transferred = true;
-            printf("DMA transfer complete\n");
+            // printf("DMA transfer complete\n");
             return;
         }
         if (addr >= 0xFE00 && addr <= 0xFE9F)
@@ -269,8 +270,8 @@ namespace CPU
         {
             if (PPU::mode == 3 && ((memory[LCDC] & 0x80) == 0x80))
             {
-                printf("Writing to VRAM in MODE 3 STAT: %x LY: %d PPU Scanline: %d PPU Cycle: %d\n", memory[STAT], memory[LY], PPU::scanline, PPU::cycle);
-                // return;
+                printf("Writing to VRAM in MODE 3 LCDC: %x STAT: %x LY: %d PPU Scanline: %d PPU Cycle: %d\n", memory[LCDC], memory[STAT], memory[LY], PPU::scanline, PPU::cycle);
+                return;
             }
         }
         if (addr >= 0xFEA0 && addr <= 0xFEFF)
@@ -398,9 +399,13 @@ namespace CPU
     }
     void set_reset_half_borrow8(u8 a, u8 b)
     {
-        a = (a & 0x0F) | 0x10;
-        u8 diff = a - (b & 0x0F);
-        if ((diff & 0x10) != 0x10)
+        // a = (a & 0x0F) | 0x10;
+        // u8 diff = a - (b & 0x0F);
+        // if ((diff & 0x10) != 0x10)
+        //     set_flag(half_carry);
+        // else
+        //     reset_flag(half_carry);
+        if ((((a & 0x0F) - (b & 0x0F)) & 0x10) == 0x10)
             set_flag(half_carry);
         else
             reset_flag(half_carry);
@@ -455,8 +460,18 @@ namespace CPU
             temp = 1;
         else
             temp = 0;
-        set_reset_half_carry8(*dest, src + temp);
-        set_reset_carry8(*dest, src + temp);
+        if ((src + temp) > 0xFF)
+            set_flag(carry);
+        else
+        {
+            set_reset_carry8(*dest, src + temp);
+        }
+        u8 sum = (*dest & 0x0F) + (src & 0x0F) + temp;
+        if ((sum & 0x10) == 0x10)
+            set_flag(half_carry);
+        else
+            reset_flag(half_carry);
+        // set_reset_half_carry8(*dest, src + temp);
         *a += (src + temp);
         set_reset_zero(A);
     }
@@ -474,10 +489,20 @@ namespace CPU
             temp = 1;
         else
             temp = 0;
-        set_reset_half_borrow8(*dest, src - temp);
-        set_reset_borrow8(*dest, src - temp);
-        *a -= (src - temp);
-        set_reset_zero(A);
+
+        if (((*dest & 0xF) - (src & 0xF) - temp) < 0)
+            set_flag(half_carry);
+        else
+            reset_flag(half_carry);
+
+        int result = *dest - src - temp;
+        if (result < 0)
+            set_flag(carry);
+        else
+            reset_flag(carry);
+        *dest = (u8)result;
+        set_reset_zero(*dest);
+        set_flag(subtract);
     }
     void and8(u8 operand)
     {
@@ -500,17 +525,27 @@ namespace CPU
         reset_flag(subtract);
         reset_flag(half_carry);
         reset_flag(carry);
-        A |= operand;
+        A ^= operand;
         set_reset_zero(A);
     }
     void cp8(u8 operand)
     {
+        if (A == operand)
+            set_flag(zero);
+        else
+            reset_flag(zero);
         set_flag(subtract);
         set_reset_half_borrow8(A, operand);
         set_reset_borrow8(A, operand);
-        if (A == operand)
-            set_reset_zero(0);
-        // set_reset_zero(A);
+        // u8 temp = A;
+        // temp -= operand;
+        // set_reset_zero(temp);
+        // if (A == operand)
+        //     set_reset_zero(0);
+        // if (A == operand)
+        //     set_flag(zero);
+        // else
+        //     reset_flag(zero);
     }
     u8 inc8(u8 val)
     {
@@ -541,7 +576,7 @@ namespace CPU
         }
         reset_flag(half_carry);
         reset_flag(subtract);
-        reset_flag(zero);
+        set_reset_zero(output);
         return output;
     }
     u8 rotate_right_carry(u8 reg)
@@ -559,7 +594,8 @@ namespace CPU
         }
         reset_flag(half_carry);
         reset_flag(subtract);
-        reset_flag(zero);
+        // reset_flag(zero);
+        set_reset_zero(output);
         return output;
     }
     u8 rotate_left(u8 reg)
@@ -575,7 +611,7 @@ namespace CPU
             output = output | 0x01;
         reset_flag(half_carry);
         reset_flag(subtract);
-        reset_flag(zero);
+        set_reset_zero(output);
         return output;
     }
     u8 rotate_right(u8 reg)
@@ -591,7 +627,7 @@ namespace CPU
             output = output | 0x80;
         reset_flag(half_carry);
         reset_flag(subtract);
-        reset_flag(zero);
+        set_reset_zero(output);
         return output;
     }
     u8 shift_left(u8 reg)
@@ -646,9 +682,9 @@ namespace CPU
     void bit_test(u8 reg, u8 bit)
     {
         if (((reg >> bit) & 0x01) == 0x01)
-            set_flag(zero);
-        else
             reset_flag(zero);
+        else
+            set_flag(zero);
         set_flag(half_carry);
         reset_flag(subtract);
     }
@@ -783,7 +819,7 @@ namespace CPU
     {
         s8 r = read_memory(PC++);
         bool result = false;
-        ;
+
         switch (opcode)
         {
         case 0x20:
@@ -949,7 +985,7 @@ namespace CPU
     }
     void ld_a_c()
     {
-        A = read_memory(0xFF00 + read_memory(C));
+        A = read_memory(0xFF00 | C);
         cycles = 2;
     }
     void ld_c_a()
@@ -1101,16 +1137,14 @@ namespace CPU
     }
     void ldhl_sp_e()
     {
-        s8 e = read_memory(PC++);
-        H = msb(SP + e);
-        L = lsb(SP + e);
+        s8 e8_operand = read_memory(PC++);
+        set_reset_half_carry8(SP & 0xFF, e8_operand);
+        set_reset_carry8(SP & 0xFF, e8_operand);
+        u16 temp = SP + e8_operand;
+        L = temp & 0xFF;
+        H = (temp & 0xFF00) >> 8;
         reset_flag(zero);
         reset_flag(subtract);
-        if ((SP + e) > 0xFFFF)
-            set_flag(carry);
-        else
-            reset_flag(carry);
-        set_reset_half_carry16(SP, e);
         cycles = 3;
     }
     void ld_nn_sp()
@@ -1310,8 +1344,13 @@ namespace CPU
     }
     void add_sp_e()
     {
-        SP = add16(SP, to_u16(read_memory(PC++), 0x00));
+        // SP = add16(SP, to_u16(read_memory(PC++), 0x00));
+        s8 e8_operand = read_memory(PC++);
+        set_reset_half_carry8(SP & 0xFF, e8_operand);
+        set_reset_carry8(SP & 0xFF, e8_operand);
+        SP = SP + e8_operand;
         reset_flag(zero);
+        reset_flag(subtract);
         cycles = 4;
     }
     void inc_ss()
@@ -1391,22 +1430,26 @@ namespace CPU
     void rlca()
     {
         A = rotate_left_carry(A);
+        reset_flag(zero);
         cycles = 1;
     }
     void rla()
     {
         A = rotate_left(A);
+        reset_flag(zero);
         cycles = 1;
     }
     void rrca()
     {
         A = rotate_right_carry(A);
+        reset_flag(zero);
         cycles = 1;
     }
     void rra()
     {
         A = rotate_right(A);
         cycles = 1;
+        reset_flag(zero);
     }
     void rlc_r()
     {
@@ -1543,22 +1586,37 @@ namespace CPU
     void daa()
     {
         u8 lsbit = A & 0x0F;
-        if ((lsbit > 0x09) || check_flag(half_carry))
+        u8 adjustment = 0;
+        if (check_flag(subtract))
         {
-            A += 0x06;
-        }
-        u8 msbit = (A & 0xF0) >> 4;
-        if ((msbit > 0x09) || check_flag(carry))
-        {
-            A += 0x60;
-            set_flag(carry);
+            if (check_flag(half_carry))
+            {
+                adjustment += 0x06;
+            }
+            if (check_flag(carry))
+            {
+                adjustment += 0x60;
+            }
+            A -= adjustment;
         }
         else
-            reset_flag(carry);
-        if (A == 0)
-            set_flag(zero);
-        else
-            reset_flag(zero);
+        {
+            if ((lsbit > 0x09) || check_flag(half_carry))
+            {
+                adjustment += 0x06;
+            }
+            if ((A > 0x99) || check_flag(carry))
+            {
+                adjustment += 0x60;
+                set_flag(carry);
+            }
+            else
+            {
+                //reset_flag(carry);
+            }
+            A += adjustment;
+        }
+        set_reset_zero(A);
         reset_flag(half_carry);
         cycles = 1;
     }
@@ -1611,7 +1669,7 @@ namespace CPU
             return;
         }
         cpu_halted = true;
-        printf("CPU Halted.\n");
+        // printf("CPU Halted.\n");
     }
     void stop()
     {
@@ -2218,6 +2276,7 @@ namespace CPU
         // //debug
         // std::cout << "PC: " << std::hex << int(PC - 1)
         //           << " opcode: " << std::hex << int(opcode) << " A:" << std::hex << int(A) << " B:" << std::hex << int(B) << " C:" << std::hex << int(C) << " D:" << std::hex << int(D) << " E:" << std::hex << int(E) << " F:" << std::hex << int(F) << " H:" << std::hex << int(H) << " L:" << std::hex << int(L) << std::endl;
+        // printf("PC: %x\n", PC - 1);
         decode_opcode();
 
         // if (error_occurred)
@@ -2337,7 +2396,7 @@ namespace CPU
             if (cpu_halted)
             {
                 cpu_halted = false;
-                printf("Out of Halt.. IF: %x IE: %x \n", read_memory(IF), read_memory(IE));
+                // printf("Out of Halt.. IF: %x IE: %x \n", read_memory(IF), read_memory(IE));
             }
             if (IME)
             {
@@ -2354,7 +2413,7 @@ namespace CPU
                     {
                         memory[IF] = memory[IF] & 0xFE;
                         IME = false;
-                        printf("Acknowleding VBLANK Interrupt...\n");
+                        // printf("Acknowleding VBLANK Interrupt...\n");
                         serve_isr(VSYNCVEC);
                     }
                 }
@@ -2372,7 +2431,7 @@ namespace CPU
                     {
                         memory[IF] = memory[IF] & 0xFD;
                         IME = false;
-                        printf("Acknowleding STAT Interrupt...\n");
+                        // printf("Acknowleding STAT Interrupt...\n");
                         serve_isr(LCDSTAT);
                     }
                 }
@@ -2387,7 +2446,7 @@ namespace CPU
                         // disable interrupt
                         memory[IF] = memory[IF] & 0xFB;
                         IME = false;
-                        printf("Acknowleding TIMER Interrupt...\n");
+                        // printf("Acknowleding TIMER Interrupt...\n");
                         serve_isr(TIMER);
                     }
                 }
