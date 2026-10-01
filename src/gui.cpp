@@ -195,7 +195,7 @@ namespace GUI
     void render()
     {
         // Clear screen
-        SDL_RenderClear(gRenderer);
+        //SDL_RenderClear(gRenderer);
         // SDL_RenderClear(ppuViewereRenderer);
 
         // Render texture to screen
@@ -237,7 +237,7 @@ namespace GUI
 
             // CPU::memory[JOYP] &= 0xF0;
             // CPU::memory[JOYP] |= 0x0F;
-            CPU::memory[JOYP] = 0xCF;
+            //CPU::memory[JOYP] = 0xCF;
 
             // Handle events on queue
             while (SDL_PollEvent(&e) != 0)
@@ -365,8 +365,10 @@ namespace GUI
             if (frameCount == 60)
             {
                 frameCount = 0;
+                printf("Vblanks this frame: %d", CPU::vblanks_this_frame);
+                CPU::vblanks_this_frame = 0;
                 timeEnd = SDL_GetTicks() - timeStart;
-                printf("Time to run 60 frames: %f\n", timeEnd / 1000.0);
+                printf("Time to run 60 frames: %f\n", timeEnd / 1000.0);                
             }
             // Wait to mantain framerate:
             frameTime = SDL_GetTicks() - frameStart;

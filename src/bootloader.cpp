@@ -46,6 +46,7 @@ void parse(char *cart) {
     }
     std::cout << "Rom Title: " << title << std::endl;
     std::string gb_color;
+    //TODO
     if (static_cast<int>(cart[0x143]) == 0x80) {
         gb_color = "GBC";
         CPU::gb_type = "CGB";
@@ -60,5 +61,6 @@ void parse(char *cart) {
         gb_type = "SGB";
     }
     std::cout << "GameBoy type: " << gb_type << std::endl;
+    std::cout << "Mapper type: " << cart[0x147] << std::endl;
 }
 } // namespace bootloader

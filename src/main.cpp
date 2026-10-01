@@ -2,8 +2,7 @@
 
 int main(int argc, char **argv)
 {
-    if (GUI::init(argv[1]))
-    // if (GUI::init("/home/soumyadeep/Projects/gb-emu/build/02-interrupts.gb"))
+    if (GUI::init(argv[1]))    
     {
         GUI::run();
     }

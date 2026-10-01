@@ -14,10 +14,12 @@ namespace PPU
     u16 window_tile_display_offset = 0;
     u32 screen_pixels[144][160];
     u32 bgTiles_pixesl[256][256];
-    u32 colors[4] = {0x009bbc0f, 0x008bac0f, 0x00306230, 0x000f380f}; // 4 shades of green
+    //u32 colors[4] = {0x009bbc0f, 0x008bac0f, 0x00306230, 0x000f380f}; // 4 shades of green
+    u32 colors[4] = {0x00e0f8d0, 0x0088c070, 0x00346856, 0x00081820}; // 4 shades of green
     std::vector<std::vector<std::vector<u8>>> grid;
     std::vector<std::vector<std::vector<u8>>> window_grid;
     std::vector<std::vector<std::vector<u8>>> sprite_grid;
+    u8 bg_pixels[160];
 
     struct sprite
     {
@@ -36,10 +38,12 @@ namespace PPU
         prev_stat = CPU::memory[STAT];
         // if (CPU::memory[JOYP] != 0xCF)
         //     printf("JOYP state changed: %x\n", CPU::memory[JOYP]);
+        //printf("JOYP: %x\n", CPU::memory[JOYP] & 0x0F);
         // DEBUG
-        CPU::memory[LY] = scanline;
+        //CPU::memory[LY] = scanline;
         if (cycle == 0)
         {
+            CPU::memory[LY] = scanline;
             // printf("LY = %d, LYC = %d\n", CPU::memory[LY], CPU::memory[LYC]);
 
             if (CPU::memory[LYC] == CPU::memory[LY])
@@ -99,7 +103,7 @@ namespace PPU
                     intrpt &= 0xFD;
                     intrpt |= 0x02;
                     CPU::memory[IF] = intrpt;
-                    //printf("STAT Interrupt, Mode 0 (HBLANK) starts..scanline: %d\n", scanline);
+                    // printf("STAT Interrupt, Mode 0 (HBLANK) starts..scanline: %d\n", scanline);
                 }
                 mode = 0;
             }
@@ -185,6 +189,10 @@ namespace PPU
             // printf("scanline: %d\n", scanline);
             // printf("LY: %d\n", CPU::memory[LY]);
             scanline++;
+            for (int i = 0; i < 160; i++)
+            {
+                bg_pixels[i] = 0;
+            }
             if (scanline == 154)
             {
                 scanline = 0;
@@ -266,6 +274,7 @@ namespace PPU
             tile_first_byte = tile_first_byte >> (7 - tile_fine_offsetx);
             current_pixel = (tile_second_byte << 1) | tile_first_byte;
             palette = CPU::memory[BGP];
+            bg_pixels[i] = current_pixel;
             switch (current_pixel)
             {
             case 0:
@@ -287,22 +296,150 @@ namespace PPU
 
     void render_sprite()
     {
-        u8 sprite_size = 1; // Sprite size, 1: 8x8 2: 8x16
+        u8 sprite_size = 8; // Sprite size, 8: 8x8 16: 8x16
         u8 sprite_y = 0;
         u8 sprite_x = 0;
         u8 sprite_index = 0;
         u8 sprite_attr = 0;
+        u8 sprite_y_top = 0;
+        u8 sprite_y_bottom = 0;
+        u8 sprite_x_left = 0;
+        u8 sprite_x_right = 0;
+
+        u8 tile_fine_offsetx = 0;
+        u8 tile_fine_offsety = 0;
+        u16 tile_data_address = 0;
+        u8 tile_first_byte = 0;
+        u8 tile_second_byte = 0;
+        int current_pixel_color = 0;
+        u8 current_pixel = 0;
+        u8 mask = 0;
+        u8 mask_shift = 7;
+        u8 palette = 0;
+
+        // DEBUG
+        //u8 sprite_on_current_pixel = 0;
+        // DEBUG
+
         if ((CPU::memory[LCDC] & 0x04) == 0x04)
-            sprite_size = 2;
-        else
-            sprite_size = 1;
-        // search through OAM 40x4 bytes
-        for (int i = 0; i < 160; i += 4)
         {
-            sprite_y = CPU::memory[0xFE00 + i] - 16;
-            sprite_x = CPU::memory[0xFE00 + i + 1];
-            sprite_index = CPU::memory[0xFE00 + i + 2];
-            sprite_attr = CPU::memory[0xFE00 + i + 3];
+            sprite_size = 16;
+        }
+        else
+        {
+            sprite_size = 8;
+        }
+
+        // // DEBUG
+        // for (int i = 0; i < 160; i += 4)
+        // {
+        //     sprite_y = CPU::memory[0xFE00 + i];
+        //     sprite_x = CPU::memory[0xFE00 + i + 1];
+        //     sprite_index = CPU::memory[0xFE00 + i + 2];
+        //     sprite_attr = CPU::memory[0xFE00 + i + 3];
+
+        //     printf("Sprite at OAM[%d]: %x OAM Addr: %x Tile Addr: %x Y: %x X: %x Attr: %x\n", i, sprite_index, 0xFE00 + i, 0x8000 + (sprite_index * 0x10), sprite_y, sprite_x, sprite_attr);
+        //     //  DEBUG
+        // }
+        // loop to render each pixel in current scanline
+        for (u8 p = 0; p < 160; p++)
+        {
+
+            // loop through OAM to check sprite that fall over current pixel
+            //  search through OAM 40x4 bytes
+            for (u8 i = 0; i < 160; i += 4)
+            {
+                sprite_y = CPU::memory[0xFE00 + i];
+                sprite_x = CPU::memory[0xFE00 + i + 1];
+                sprite_index = CPU::memory[0xFE00 + i + 2];
+                sprite_attr = CPU::memory[0xFE00 + i + 3];
+
+                sprite_y_top = sprite_y - 16;
+                sprite_y_bottom = sprite_y_top + sprite_size - 1;
+
+                sprite_x_left = sprite_x - 8;
+                sprite_x_right = sprite_x_left + 8 - 1;
+                if (sprite_y_top <= scanline && sprite_y_bottom >= scanline)
+                {
+                    // Sprite falls in current scanline
+                    if (sprite_x_left <= p && sprite_x_right >= p)
+                    {
+                        // Sprite falls in current pixel                                                
+                        if ((sprite_attr & 0x80) && bg_pixels[p] > 0)
+                        {
+                            break;
+                        }                        
+
+                        if (sprite_size == 8)
+                            tile_data_address = 0x8000 + (sprite_index * 0x10);
+                        else
+                        {
+                            //printf("Sprite size 16\n");
+                            if ((scanline - sprite_y_top) >= 8)
+                            {
+                                // We are drawing 2nd tile of 8x16 sprite
+                                tile_data_address = 0x8000 + ((sprite_index | 0x01) * 0x10);
+                            }
+                            else
+                            {
+                                // We are drawing 1st tile of 8x16 sprite
+                                tile_data_address = 0x8000 + ((sprite_index & 0xFE) * 0x10);
+                            }
+                        }
+
+                        mask_shift = 7;
+                        
+
+                        tile_fine_offsetx = p - sprite_x_left;//p % 8;
+                        if (sprite_attr & 0x20) // X flip
+                        {
+                            mask_shift = mask_shift % 7;
+                            //tile_fine_offsetx = std::abs(8 - tile_fine_offsetx);
+                        }
+                        if (sprite_size == 8)
+                            tile_fine_offsety = scanline - sprite_y_top;//scanline % 8;
+                        else 
+                            tile_fine_offsety = scanline - sprite_y_top;//scanline % 8;
+                        if (sprite_attr & 0x40) // Y flip
+                        {
+                            tile_fine_offsety = tile_fine_offsety % 8; 
+                            //tile_fine_offsety = std::abs(8 - tile_fine_offsety);
+                        }
+                        tile_first_byte = CPU::memory[tile_data_address + (tile_fine_offsety * 2)];
+                        tile_second_byte = CPU::memory[tile_data_address + (tile_fine_offsety * 2) + 1];
+
+                        mask = 0b00000001 << (mask_shift - tile_fine_offsetx); // Create mask according to the X value of the pixel we are drawing
+                        tile_second_byte &= mask;
+                        tile_first_byte &= mask;
+                        tile_second_byte = tile_second_byte >> (mask_shift - tile_fine_offsetx);
+                        tile_first_byte = tile_first_byte >> (mask_shift - tile_fine_offsetx);
+                        current_pixel = (tile_second_byte << 1) | tile_first_byte;
+                        if (sprite_attr & 0x10)
+                            palette = CPU::memory[OBP1];
+                        else
+                            palette = CPU::memory[OBP0];
+                        switch (current_pixel)
+                        {
+                        case 0:
+                            //current_pixel_color = colors[palette & 0x03];
+                            break;
+                        case 1:
+                            current_pixel_color = colors[(palette & 0x0C) >> 2];
+                            break;
+                        case 2:
+                            current_pixel_color = colors[(palette & 0x30) >> 4];
+                            break;
+                        case 3:
+                            current_pixel_color = colors[(palette & 0xC0) >> 6];
+                            break;
+                        default: 
+                            printf("No pixel color found\n");
+                        }
+                        if (current_pixel > 0)
+                            screen_pixels[scanline][p] = current_pixel_color;
+                    }
+                }
+            }
         }
     }
 
@@ -324,43 +461,11 @@ namespace PPU
 
         // u8 scroll_x = 0; // CPU::memory[SCX];
         // u8 scroll_y = 0; // CPU::memory[SCY];
-        // // u8 window_scroll_x = 0;
-        // // u8 window_scroll_y = 0;
-
-        // // u8 window_tile_coarse_offsetx = window_scroll_x / 8;
-        // // u8 window_tile_coarse_offsety = window_scroll_y / 8;
-
-        // // u8 window_tile_fine_offsetx = normalize(window_scroll_x) % 8;
-        // // u8 window_tile_fine_offsety = normalize(window_scroll_y) % 8;
-
-        // u8 sprite_tile_fine_offsetx = 0;
-        // u8 sprite_tile_fine_offsety = 0;
-
-        u8 sprites_this_scanline = 0;
-        // // search through OAM 40x4 bytes
-        // for (int o = 0; o < 160; o += 4)
-        // {
-        //     // check if sprite Y falls in current scanline
-        //     u8 sprite_y = CPU::memory[0xFE00 + o] - 16;
-        //     u8 sprite_x = CPU::memory[0xFE00 + o + 1];
-        //     u8 sprite_index = CPU::memory[0xFE00 + o + 2];
-        //     u8 sprite_attr = CPU::memory[0xFE00 + o + 3];
-        //     // 8x8 sprites
-        //     if ((sprite_y <= scanline) && (sprite_y >= scanline - 8))
-        //     {
-        //         // printf("scanline: %i, sprite Y: %i, sprite X: %i\n", scanline, sprite_y, sprite_x);
-        //         sprites_to_render.push_back(sprite{sprite_y, sprite_x, sprite_index, sprite_attr});
-        //         sprites_this_scanline++;
-        //         if (sprites_this_scanline >= 10)
-        //         {
-        //             sprites_this_scanline = 0;
-        //             break;
-        //         }
-        //     }
-        // }
+        
         if (CPU::memory[LCDC] & 0x01)
             render_background();
-
+        if (CPU::memory[LCDC] & 0x02)
+            render_sprite();
         // render window
         // if ((CPU::memory[LCDC] & 0x20) == 0x20)
         // {
@@ -490,53 +595,7 @@ namespace PPU
                 GUI::bgTiles_screen_buffer[i * 256 + j] = pixel_color_num;
             }
         }
-    }
-
-    // void render_sprite_tiles()
-    // {
-    //     u16 sprite_tile_display_offset = 0x8000;
-    //     std::vector<std::vector<std::vector<u8>>> grid;
-    //     std::vector<sprite> oam_sprites_to_render;
-    //     grid = build_chrgrid(sprite_tile_display_offset);
-    //     for (u8 o = 0; o < 160; o += 4)
-    //     {
-    //         u8 sprite_y = CPU::memory[0xFE00 + o] + 16;
-    //         u8 sprite_x = CPU::memory[0xFE00 + o + 1];
-    //         u8 sprite_index = CPU::memory[0xFE00 + o + 2];
-    //         u8 sprite_attr = CPU::memory[0xFE00 + o + 3];
-    //         // 8x8 sprites
-    //         oam_sprites_to_render.push_back(sprite{sprite_y, sprite_x, sprite_index, sprite_attr});
-    //     }
-    //     u8 oam_sprite_tile_to_fetch = 0;
-    //     for (auto it : oam_sprites_to_render)
-    //     {
-    //         oam_sprite_tile_to_fetch = CPU::memory[0x8000 + it.sprite_index];
-    //         std::vector<std::vector<u8>> sprite_tile_data = sprite_grid[oam_sprite_tile_to_fetch];
-    //         u8 sprite_palette = 0;
-    //         if ((it.sprite_attr & 0x10) == 0x10)
-    //         {
-    //             sprite_palette = CPU::memory[OBP1];
-    //         }
-    //         else
-    //         {
-    //             sprite_palette = CPU::memory[OBP0];
-    //         }
-    //         sprite_pixel_color_num = sprite_tile_data[sprite_tile_fine_offsety][sprite_tile_fine_offsetx];
-    //         switch (sprite_pixel_color_num)
-    //         {
-    //         case 1:
-    //             sprite_pixel_color_num = colors[(sprite_palette & 0x0C) >> 2];
-    //             break;
-    //         case 2:
-    //             sprite_pixel_color_num = colors[(sprite_palette & 0x30) >> 4];
-    //             break;
-    //         case 3:
-    //             sprite_pixel_color_num = colors[(sprite_palette & 0xC0) >> 6];
-    //             break;
-    //         }
-    //         screen_pixels[scanline][i] = sprite_pixel_color_num;
-    //     }
-    // }
+    }   
 
     std::vector<std::vector<std::vector<u8>>> build_chrgrid(u16 offset)
     {
@@ -601,6 +660,10 @@ namespace PPU
                 GUI::off_screen_buffer[i * 160 + j] = 0;
             }
         }
+        for (int i = 0; i < 160; i++)
+        {
+            bg_pixels[i] = 0;
+        }
     }
 
     void render_offscreen_buffer()
@@ -609,7 +672,7 @@ namespace PPU
         {
             for (int j = 0; j < 160; j++)
             {
-                GUI::off_screen_buffer[i * 160 + j] = screen_pixels[i][j];                
+                GUI::off_screen_buffer[i * 160 + j] = screen_pixels[i][j];
             }
         }
     }

@@ -10,7 +10,8 @@ namespace CPU
     u8 memory[65536];
     u8 A, B, C, D, E, F, H, L, opcode;
     bool IME = false;
-    bool dma_transferred = false;
+    bool dma_transfer_started = false;
+    bool dma_transfer_complete = false;
     bool isr_served = false;
     u8 *a = &A;
     u8 *b = &B;
@@ -33,6 +34,12 @@ namespace CPU
     int T_CYCLES_PER_FRAME = 70224;
     bool error_occurred = false;
     bool cpu_halted = false;
+    u16 dma_source = 0x0000;
+    int dma_cycles = 0;
+
+    // DEBUG
+    int vblanks_this_frame = 0;
+    // DEBUG
 
     void reset()
     {
@@ -107,8 +114,8 @@ namespace CPU
         memory[0xFF44] = 144;  // LY
         memory[0xFF45] = 0x00; // LYC
         // memory[0xFF47] = 0xFC; // BGP
-        // memory[0xFF48] = 0xFF; // OBP0
-        // memory[0xFF49] = 0xFF; // OBP1
+        memory[0xFF48] = 0xFF; // OBP0
+        memory[0xFF49] = 0xFF; // OBP1
         memory[0xFF4A] = 0x00; // WY
         memory[0xFF4B] = 0x00; // WX
         memory[0xFFFF] = 0x00; // IE
@@ -116,29 +123,25 @@ namespace CPU
     u8 read_memory(u16 addr)
     {
         // TODO: Mirroring logic and events
-        if (addr == 0xFF41)
-        {
-            printf("Reading LCD Status FF41 at scanline: %d, current value: %x\n", PPU::scanline, memory[addr]);
-            // return 0x9F;
-        }
-        if (addr >= 0xFEA0 && addr <= 0xFEFF)
-        {
-            printf("Reading from prohibited memory space FEA0-FEFF\n");
-            return 0;
-        }
+        // if (addr == 0xFF41)
+        // {
+        //     // printf("Reading LCD Status FF41 at scanline: %d, current value: %x\n", PPU::scanline, memory[addr]);
+        //     //  return 0x9F;
+        // }
         switch (addr)
         {
         case JOYP:
-            // printf("Reading JOYP...\n");
-            //  if ((memory[JOYP] & 0x30) == 0x30)
-            //  {
-            //      return 0x3F;
-            //  }
-            memory[JOYP] &= 0xF0;
-            memory[JOYP] |= 0x0F;
+            // printf("Reading JOYP: %x\n", memory[JOYP]);
+            //   if ((memory[JOYP] & 0x30) == 0x30)
+            //   {
+            //       return 0x3F;
+            //   }
+            //  memory[JOYP] &= 0xF0;
+            //  memory[JOYP] |= 0x0F;
+            return 0xCF | (memory[JOYP] & 0x30);
             break;
         case STAT:
-            printf("Reading LCD STAT...\n");
+            // printf("Reading LCD STAT...\n");
             if ((memory[LCDC] & 0x80) == 0)
             {
                 return memory[STAT] & 0xFC;
@@ -148,13 +151,19 @@ namespace CPU
             // printf("Checking for LY: %d scanline: %d cycle: %d\n", memory[LY], PPU::scanline, PPU::cycle);
             break;
         }
-        if (addr >= 0xFE00 && addr <= 0xFE9F)
+        if ((dma_transfer_started) && !(dma_transfer_complete))
         {
-            // if ((addr == 0xFE00) && (val > 16))
-            //     printf("oam writing..\n");
+            if (addr < 0xFF80 && addr > 0xFFFE)
+            {
+                return 0x00;
+            }
+        }
+        if (addr >= 0xFEA0 && addr <= 0xFE9F)
+        {
             if (PPU::mode == 3) // && ((memory[LCDC] & 0x80) == 0x80))
                 return 0xFF;
-            // printf("OAM written, Addr: %u Val: %u\n", addr, val);
+            else
+                return 0x00;
         }
         else if (addr >= 0x8000 && addr <= 0x9FFF)
         {
@@ -193,11 +202,8 @@ namespace CPU
             break;
         case DIV:
             memory[DIV] = 0;
-            break;
+            return;
         case LCDC:
-
-            printf("Writing %x to LCDC at scanline: %d cycle: %d PC: %x IME: %d STAT: %x\n", val, PPU::scanline, PPU::cycle, PC - 1, IME, memory[STAT]);
-
             if ((memory[LCDC] & 0x80) && (val & 0x80) == 0 && PPU::mode != 1)
             {
                 printf("Trying to turn off LCD during rendering\n");
@@ -205,26 +211,15 @@ namespace CPU
             }
             else if ((memory[LCDC] & 0x80) && (val & 0x80) == 0)
             {
+                // RESET GAMEBOY when PPU is disabled
                 PPU::scanline = 0;
                 PPU::mode = 2;
-                // PPU::cycle = 0;
+                PPU::cycle = 0;
                 memory[LY] = 0;
                 u8 temp = memory[STAT] & 0xFC;
                 temp |= 0x02;
                 memory[STAT] = temp;
             }
-            // RESET GAMEBOY when PPU is disabled
-            //  if ((val & 0x80) == 0)
-            //  {
-            //      PPU::scanline = 0;
-            //      PPU::mode = 2;
-            //      PPU::cycle = 0;
-            //      memory[LY] = 0;
-            //      u8 temp = memory[STAT] & 0xFC;
-            //      temp |= 0x02;
-            //      memory[STAT] = temp;
-            //  }
-            // PPU::build_tile_grids();
             break;
         case STAT:
             // printf("Writing to LCD STAT at scanline: %d, value: %x\n", PPU::scanline, val);
@@ -235,33 +230,36 @@ namespace CPU
             // printf("Writing to LYC at scanline: %d, value: %x\n", PPU::scanline, val);
             break;
         case JOYP:
+            // printf("Game Writing to JOYP: %x\n", val);
             memory[JOYP] &= 0x0F;
             memory[JOYP] |= (val & 0xF0);
+            // printf("Actaully Wrote to JOYP: %x\n", memory[JOYP]);
             return;
         case IE:
-            // DEBUG
-            // printf("Writing to IE, value: %x\n", val);
-            // if (val & 0x02)
-            //     printf("Enabling STAT Interrupt, Cycle: %d, Scanline %d\n", PPU::cycle, PPU::scanline);
-            // else
-            //     printf("Disabling STAT Interrupt, Cycle: %d, Scanline %d\n", PPU::cycle, PPU::scanline);
-            // DEBUG
             break;
         case DMA:
-            u16 dma_source = (val / 0x100) << 8;
-            for (int i = 0; i < 160; i++)
+            // u16 dma_source = (val / 0x100) << 8;
+            if (val <= 0xDF)
             {
-                memory[0xFE00 + i] = memory[dma_source + i];
+                dma_transfer_started = true;
+                dma_transfer_complete = false;
+                dma_source = (val << 8);
             }
-            dma_transferred = true;
-            // printf("DMA transfer complete\n");
-            return;
         }
+
+        if ((dma_transfer_started) && !(dma_transfer_complete))
+        {
+            if (addr < 0xFF80 && addr > 0xFFFE)
+            {
+                return;
+            }
+        }
+
         if (addr >= 0xFE00 && addr <= 0xFE9F)
         {
             // printf("Manually writing to OAM\n");
-            //  if ((addr == 0xFE00) && (val > 16))
-            //      printf("oam writing..\n");
+            //   if ((addr == 0xFE00) && (val > 16))
+            //       printf("oam writing..\n");
             if (PPU::mode > 1) // && ((memory[LCDC] & 0x80) == 0x80))
                 return;
             // printf("OAM written, Addr: %u Val: %u\n", addr, val);
@@ -270,17 +268,18 @@ namespace CPU
         {
             if (PPU::mode == 3 && ((memory[LCDC] & 0x80) == 0x80))
             {
-                printf("Writing to VRAM in MODE 3 LCDC: %x STAT: %x LY: %d PPU Scanline: %d PPU Cycle: %d\n", memory[LCDC], memory[STAT], memory[LY], PPU::scanline, PPU::cycle);
+                printf("Writing to VRAM in MODE 3 PC: %x OpCode: %x LCDC: %x STAT: %x LY: %d PPU Scanline: %d PPU Cycle: %d\n", PC -1, opcode, memory[LCDC], memory[STAT], memory[LY], PPU::scanline, PPU::cycle);
                 return;
             }
         }
         if (addr >= 0xFEA0 && addr <= 0xFEFF)
         {
-            // printf("Writing to prohibited memory space FEA0-FEFF\n");
+            return;
         }
-        // DEBUG
-        // if (addr == 0xFF80) return;
-        // DEBUG
+        if (addr >= 0xE000 && addr <= 0xFDFF)
+        {
+            return;
+        }
         memory[addr] = val;
     }
     u16 to_u16(u8 lsb, u8 msb)
@@ -732,13 +731,7 @@ namespace CPU
         return reg;
     }
     u8 bit_reset(u8 reg, u8 bit)
-    {
-        // for (int i = 0; i <= bit; i++)
-        // {
-        //     reg = reg << 1;
-        //     if (i > 0)
-        //         reg = reg | 0x01;
-        // }
+    {        
         switch (bit)
         {
         case 0:
@@ -1013,11 +1006,7 @@ namespace CPU
     void ld_nn_a()
     {
         u8 lsb = read_memory(PC++);
-        u8 msb = read_memory(PC++);
-        // if ((msb == 216) && (lsb == 3))
-        // {
-        //     std::cout << "debug" << std::endl;
-        // }
+        u8 msb = read_memory(PC++);        
         write_memory(to_u16(lsb, msb), A);
         cycles = 4;
     }
@@ -1612,7 +1601,7 @@ namespace CPU
             }
             else
             {
-                //reset_flag(carry);
+                // reset_flag(carry);
             }
             A += adjustment;
         }
@@ -1653,11 +1642,8 @@ namespace CPU
         cycles = 1;
     }
     void ei()
-    {
-        // std::cout << "IME enabled" << std::endl;
+    {        
         IME = true;
-        // enable all interrupt flags
-        // write_memory(IE, 0x1F);
         cycles = 1;
     }
     void halt()
@@ -1668,8 +1654,7 @@ namespace CPU
         {
             return;
         }
-        cpu_halted = true;
-        // printf("CPU Halted.\n");
+        cpu_halted = true;      
     }
     void stop()
     {
@@ -1678,6 +1663,10 @@ namespace CPU
     void fetch_opcode() { opcode = read_memory(PC++); }
     void decode_opcode()
     {
+        if (PC >= 0x4000)
+        {
+            printf("Opcode: %x PC: %x STAT: %x\n", opcode, PC-1, memory[STAT]);
+        }
         switch (opcode)
         {
         // 8-bit Transfer IN/OUTs
@@ -2255,8 +2244,7 @@ namespace CPU
             rst_n();
             break;
         default:
-            std::cout << "Unknown opcode: " << std::hex << opcode << std::endl;
-            // exit(1);
+            printf("Unknown Opcode: %x\n", opcode);
             error_occurred = true;
             break;
         }
@@ -2279,58 +2267,16 @@ namespace CPU
         // printf("PC: %x\n", PC - 1);
         decode_opcode();
 
-        // if (error_occurred)
-        //     break;
-        if (dma_transferred)
+        // if (dma_transfer_complete)
+        // {
+        //     cycles += 160;
+        //     dma_transfer_complete = false;
+        // }
+        if ((dma_transfer_started) && !(dma_transfer_complete))
         {
-            cycles += 160;
-            dma_transferred = false;
+            run_dma(cycles);
         }
 
-        // run_timers();
-
-        // if ((memory[LCDC] & 0x80) == 0x80)
-        // {
-        //     for (int i = 0; i < cycles * 4; i++)
-        //     {
-        //         PPU::tick();
-        //     }
-        // }
-        // cycles_this_frame += cycles;
-
-        // check_interrupts();
-
-        // if (isr_served)
-        // {
-        //     // if ((memory[LCDC] & 0x80) == 0x80)
-        //     // {
-        //     if ((memory[LCDC] & 0x80) == 0x80)
-        //     {
-        //         for (int i = 0; i < cycles * 4; i++)
-        //         {
-        //             PPU::tick();
-        //         }
-        //     }
-        //     // }
-        //     cycles_this_frame += cycles;
-        //     isr_served = false;
-        // }
-        // cycles_this_frame += cycles;
-        // if (cycles_this_frame >= CYCLES_PER_FRAME)
-        // {
-
-        //     //  printf("CPU Cycles ran this frame: %d\n", cycles_this_frame);
-        //     //  printf("PPU Cycles ran this frame: %d\n", PPU::main_cycles);
-        //     cycles_this_frame -= CYCLES_PER_FRAME;
-        //     break;
-        // }
-        //}
-        //     myfile.close();
-        // }
-        // std::cout << "Ran a frame" << std::endl;
-        // DEBUG STARTS
-        // printf("JOYPAD LOWER NIBBLE: %x\n", memory[JOYP]);
-        // DEBUG ENDS
         return cycles;
     }
 
@@ -2341,8 +2287,6 @@ namespace CPU
         PC = vector;
         cycles = 5;
         isr_served = true;
-        // if (cpu_halted)
-        //     cpu_halted = false;
     }
 
     void run_timers(int cycles_to_run)
@@ -2414,6 +2358,7 @@ namespace CPU
                         memory[IF] = memory[IF] & 0xFE;
                         IME = false;
                         // printf("Acknowleding VBLANK Interrupt...\n");
+                        vblanks_this_frame++;
                         serve_isr(VSYNCVEC);
                     }
                 }
@@ -2451,6 +2396,31 @@ namespace CPU
                     }
                 }
             }
+        }
+    }
+
+    void run_dma(int cycles_to_run)
+    {
+        int term_dma_cycles = 0;
+        int i = dma_cycles;
+        if ((dma_cycles + cycles_to_run) < 160)
+        {
+            term_dma_cycles = dma_cycles + cycles_to_run;
+        }
+        else
+        {
+            term_dma_cycles = 160;
+        }
+        for (i = dma_cycles; i < term_dma_cycles; i++)
+        {
+            memory[0xFE00 + i] = memory[dma_source + i];
+            dma_cycles++;
+        }
+        if (dma_cycles == 160)
+        {
+            dma_cycles = 0;
+            dma_transfer_started = false;
+            dma_transfer_complete = true;
         }
     }
 } // namespace CPU

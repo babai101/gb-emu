@@ -20,6 +20,10 @@ namespace CPU
     extern int T_CYCLES_PER_FRAME;
     extern bool isr_served;
     extern bool cpu_halted;
+    //DEBUG
+    extern int vblanks_this_frame;
+    //DEBUG
+
     u8 read_memory(u16);
     enum flags
     {
@@ -38,4 +42,5 @@ namespace CPU
     void serve_isr(u16);
     void check_interrupts();
     void run_timers(int);
+    void run_dma(int);
 } // namespace CPU
