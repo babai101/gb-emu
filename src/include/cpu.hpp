@@ -20,6 +20,9 @@ namespace CPU
     extern int T_CYCLES_PER_FRAME;
     extern bool isr_served;
     extern bool cpu_halted;
+    // Joypad state, active-low (1 = released). Bits: 0=Right/A 1=Left/B 2=Up/Select 3=Down/Start
+    extern u8 joypad_dpad;
+    extern u8 joypad_buttons;
     //DEBUG
     extern int vblanks_this_frame;
     //DEBUG

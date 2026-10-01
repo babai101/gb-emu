@@ -34,6 +34,8 @@ namespace CPU
     int T_CYCLES_PER_FRAME = 70224;
     bool error_occurred = false;
     bool cpu_halted = false;
+    u8 joypad_dpad = 0x0F;
+    u8 joypad_buttons = 0x0F;
     u16 dma_source = 0x0000;
     int dma_cycles = 0;
 
@@ -138,8 +140,17 @@ namespace CPU
             //   }
             //  memory[JOYP] &= 0xF0;
             //  memory[JOYP] |= 0x0F;
-            return 0xCF | (memory[JOYP] & 0x30);
-            break;
+            {
+                // Bits 4/5 select the dpad / button group (0 = selected).
+                // Bits 0-3 are active-low: 0 = pressed.
+                u8 select = memory[JOYP] & 0x30;
+                u8 low = 0x0F;
+                if ((select & 0x10) == 0)
+                    low &= joypad_dpad;
+                if ((select & 0x20) == 0)
+                    low &= joypad_buttons;
+                return 0xC0 | select | low;
+            }
         case STAT:
             // printf("Reading LCD STAT...\n");
             if ((memory[LCDC] & 0x80) == 0)
@@ -176,6 +187,12 @@ namespace CPU
     }
     void write_memory(u16 addr, u8 val)
     {
+        // ROM area (0x0000-0x7FFF): writes go to the cartridge's MBC registers
+        // (e.g. bank select at 0x2000), they must never modify the ROM image.
+        // Without this, Dr. Mario's write of 0x01 to 0x2000 corrupts the
+        // operand of an "AND $F8" at 0x2000 and breaks collision data.
+        if (addr < 0x8000)
+            return;
         // TODO: Mirroring logic and events
         switch (addr)
         {
@@ -201,7 +218,11 @@ namespace CPU
             }
             break;
         case DIV:
+            // Writing DIV resets the internal system counter, which also
+            // restarts the divider and TIMA prescaler phase.
             memory[DIV] = 0;
+            div_cycles = 0;
+            tima_cycles = 0;
             return;
         case LCDC:
             if ((memory[LCDC] & 0x80) && (val & 0x80) == 0 && PPU::mode != 1)
@@ -231,8 +252,7 @@ namespace CPU
             break;
         case JOYP:
             // printf("Game Writing to JOYP: %x\n", val);
-            memory[JOYP] &= 0x0F;
-            memory[JOYP] |= (val & 0xF0);
+            memory[JOYP] = val & 0x30;
             // printf("Actaully Wrote to JOYP: %x\n", memory[JOYP]);
             return;
         case IE:
@@ -1558,7 +1578,7 @@ namespace CPU
     {
         u16 addr = to_u16(L, H);
         write_memory(addr, bit_set(read_memory(addr), (opcode >> 3) & 0x07));
-        cycles = 3;
+        cycles = 4;
     }
     void res_b_r()
     {
@@ -1616,7 +1636,7 @@ namespace CPU
         set_flag(subtract);
         cycles = 1;
     }
-    void nop() { cycles++; }
+    void nop() { cycles = 1; }
     void ccf()
     {
         if (check_flag(carry))
@@ -1649,6 +1669,7 @@ namespace CPU
     void halt()
     {
         // TODO Implement HALT BUG
+        cycles = 1;
 
         if ((read_memory(IF) & read_memory(IE)) && !IME)
         {
@@ -1663,10 +1684,10 @@ namespace CPU
     void fetch_opcode() { opcode = read_memory(PC++); }
     void decode_opcode()
     {
-        if (PC >= 0x4000)
-        {
-            printf("Opcode: %x PC: %x STAT: %x\n", opcode, PC-1, memory[STAT]);
-        }
+        // if (PC >= 0x4000)
+        // {
+        //     printf("Opcode: %x PC: %x STAT: %x\n", opcode, PC-1, memory[STAT]);
+        // }
         switch (opcode)
         {
         // 8-bit Transfer IN/OUTs

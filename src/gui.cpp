@@ -254,36 +254,51 @@ namespace GUI
                     // Handle the window close event (e.g., set a 'quit' flag to true)
                     break;
                 case SDL_KEYDOWN:
-                    // Handle key down event
+                case SDL_KEYUP:
+                {
+                    bool pressed = (e.type == SDL_KEYDOWN);
+                    u8 *group = nullptr;
+                    u8 mask = 0;
                     switch (e.key.keysym.scancode)
                     {
-                    case SDL_SCANCODE_LEFT:
-                        // Action for 'LEFT' key down
-                        CPU::memory[JOYP] &= 0xFD;
-                        CPU::memory[JOYP] |= 0x02;
-                        break;
                     case SDL_SCANCODE_RIGHT:
-                        CPU::memory[JOYP] &= 0xCE;
-                        CPU::memory[JOYP] |= 0x20;
+                        group = &CPU::joypad_dpad, mask = 0x01;
+                        break;
+                    case SDL_SCANCODE_LEFT:
+                        group = &CPU::joypad_dpad, mask = 0x02;
                         break;
                     case SDL_SCANCODE_UP:
-                        CPU::memory[JOYP] &= 0xFB;
-                        CPU::memory[JOYP] |= 0x04;
+                        group = &CPU::joypad_dpad, mask = 0x04;
                         break;
                     case SDL_SCANCODE_DOWN:
-                        CPU::memory[JOYP] &= 0xF7;
-                        CPU::memory[JOYP] |= 0x08;
+                        group = &CPU::joypad_dpad, mask = 0x08;
                         break;
-                    case SDL_SCANCODE_ESCAPE:
-                        // Action for 'Escape' key down
+                    case SDL_SCANCODE_Z: // A
+                        group = &CPU::joypad_buttons, mask = 0x01;
+                        break;
+                    case SDL_SCANCODE_X: // B
+                        group = &CPU::joypad_buttons, mask = 0x02;
+                        break;
+                    case SDL_SCANCODE_RSHIFT: // Select
+                    case SDL_SCANCODE_BACKSPACE:
+                        group = &CPU::joypad_buttons, mask = 0x04;
+                        break;
+                    case SDL_SCANCODE_RETURN: // Start
+                        group = &CPU::joypad_buttons, mask = 0x08;
                         break;
                     default:
                         break;
                     }
+                    if (group)
+                    {
+                        // Active-low: clear the bit while pressed
+                        if (pressed)
+                            *group &= ~mask;
+                        else
+                            *group |= mask;
+                    }
                     break;
-                case SDL_KEYUP:
-                    // Handle key up event
-                    break;
+                }
                 }
             }
             // std::cout << "Running CPU" << std::endl;
@@ -312,6 +327,7 @@ namespace GUI
                                 PPU::tick();
                             }
                         }
+                        CPU::run_timers(5);
                         CPU::isr_served = false;
                         cycles_this_frame += (5 * 4);
                     }
@@ -339,6 +355,7 @@ namespace GUI
                                     PPU::tick();
                                 }
                             }
+                            CPU::run_timers(5);
                             CPU::isr_served = false;
                             cycles_this_frame += (5 * 4);
                         }
@@ -365,10 +382,10 @@ namespace GUI
             if (frameCount == 60)
             {
                 frameCount = 0;
-                printf("Vblanks this frame: %d", CPU::vblanks_this_frame);
+                //printf("Vblanks this frame: %d", CPU::vblanks_this_frame);
                 CPU::vblanks_this_frame = 0;
                 timeEnd = SDL_GetTicks() - timeStart;
-                printf("Time to run 60 frames: %f\n", timeEnd / 1000.0);                
+                //printf("Time to run 60 frames: %f\n", timeEnd / 1000.0);                
             }
             // Wait to mantain framerate:
             frameTime = SDL_GetTicks() - frameStart;
