@@ -323,6 +323,7 @@ namespace PPU
 
         if ((CPU::memory[LCDC] & 0x04) == 0x04)
         {
+            //printf("Sprite size 16\n");
             sprite_size = 16;
         }
         else
@@ -391,28 +392,37 @@ namespace PPU
                         
 
                         tile_fine_offsetx = p - sprite_x_left;//p % 8;
-                        if (sprite_attr & 0x20) // X flip
-                        {
-                            mask_shift = mask_shift % 7;
-                            //tile_fine_offsetx = std::abs(8 - tile_fine_offsetx);
-                        }
+                        
                         if (sprite_size == 8)
                             tile_fine_offsety = scanline - sprite_y_top;//scanline % 8;
                         else 
                             tile_fine_offsety = scanline - sprite_y_top;//scanline % 8;
                         if (sprite_attr & 0x40) // Y flip
                         {
-                            tile_fine_offsety = tile_fine_offsety % 8; 
-                            //tile_fine_offsety = std::abs(8 - tile_fine_offsety);
+                            tile_fine_offsety = 7 - tile_fine_offsety;                             
                         }
                         tile_first_byte = CPU::memory[tile_data_address + (tile_fine_offsety * 2)];
                         tile_second_byte = CPU::memory[tile_data_address + (tile_fine_offsety * 2) + 1];
-
-                        mask = 0b00000001 << (mask_shift - tile_fine_offsetx); // Create mask according to the X value of the pixel we are drawing
+                        if (sprite_attr & 0x20) // X flip
+                        {
+                            mask = 0b00000001 << (tile_fine_offsetx); // Create mask according to the X value of the pixel we are drawing                            
+                        }
+                        else 
+                        {
+                            mask = 0b00000001 << (mask_shift - tile_fine_offsetx); // Create mask according to the X value of the pixel we are drawing
+                        }
                         tile_second_byte &= mask;
                         tile_first_byte &= mask;
-                        tile_second_byte = tile_second_byte >> (mask_shift - tile_fine_offsetx);
-                        tile_first_byte = tile_first_byte >> (mask_shift - tile_fine_offsetx);
+                        if (sprite_attr & 0x20) // X flip
+                        {
+                            tile_second_byte = tile_second_byte >> (tile_fine_offsetx);
+                            tile_first_byte = tile_first_byte >> (tile_fine_offsetx);
+                        }
+                        else
+                        {
+                            tile_second_byte = tile_second_byte >> (mask_shift - tile_fine_offsetx);
+                            tile_first_byte = tile_first_byte >> (mask_shift - tile_fine_offsetx);
+                        }                        
                         current_pixel = (tile_second_byte << 1) | tile_first_byte;
                         if (sprite_attr & 0x10)
                             palette = CPU::memory[OBP1];
